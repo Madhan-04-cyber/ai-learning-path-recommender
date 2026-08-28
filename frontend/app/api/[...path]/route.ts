@@ -34,26 +34,26 @@ async function proxy(request: NextRequest, path: string[]) {
 	});
 }
 
-export async function GET(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }
 
-export async function POST(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function POST(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }
 
-export async function PUT(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function PUT(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }
 
-export async function PATCH(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function PATCH(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }
 
-export async function DELETE(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function DELETE(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }
 
-export async function OPTIONS(request: NextRequest, context: { params: { path: string[] } }) {
-	return proxy(request, context.params.path);
+export async function OPTIONS(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+	return context.params.then((params) => proxy(request, params.path));
 }

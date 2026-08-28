@@ -76,14 +76,15 @@ export default function AnalysisPage() {
 
 		try {
 			const data = JSON.parse(saved) as { goal?: string };
-			if (typeof data.goal !== "string" || !data.goal.trim() || data.goal.length > 500) {
+			const savedGoal = typeof data.goal === "string" ? data.goal.trim() : "";
+			if (!savedGoal || savedGoal.length > 500) {
 				window.setTimeout(() => {
 					setError("Your saved goal is invalid. Please enter it again.");
 				}, 0);
 				return;
 			}
 			window.setTimeout(() => {
-				void analyzeGoal(data.goal);
+				void analyzeGoal(savedGoal);
 			}, 0);
 		} catch {
 			window.localStorage.removeItem("pathmind_onboarding");
