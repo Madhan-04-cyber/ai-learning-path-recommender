@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, CircleAlert, CircleDot, Clock3, Compass, Lock, RefreshCw, Sparkles, Target } from "lucide-react";
@@ -42,7 +42,7 @@ type NodeGroup = {
 	items: RoadmapItem[];
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const statusLabel: Record<string, string> = {
 	CURRENT: "Current",
@@ -211,16 +211,16 @@ export default function PathPage() {
 					<div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] lg:items-center">
 						{[
 							["START", "The route begins here"],
-							["↓", ""],
+							["â†“", ""],
 							["Completed skills", `${groupedNodes.filter((node) => node.status === "COMPLETED").length} verified`],
-							["↓", ""],
+							["â†“", ""],
 							["Current skill", selectedGroup?.label || "Select a node"],
-							["↓", ""],
+							["â†“", ""],
 							["Future skills", `${groupedNodes.filter((node) => ["AVAILABLE", "LOCKED"].includes(node.status)).length} ahead`],
-							["↓", ""],
+							["â†“", ""],
 							["Career Ready", roadmap.estimatedDuration],
-						].map(([label, detail]) => (
-							<div key={label} className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-center">
+						].map(([label, detail], index) => (
+							<div key={`${label}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-center">
 								<p className="break-words text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>
 								{detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
 							</div>
@@ -315,7 +315,7 @@ export default function PathPage() {
 								<div className="grid gap-3 sm:grid-cols-2">
 									<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
 										<p className="text-[10px] uppercase text-slate-500">Prerequisites</p>
-										<p className="mt-2 text-sm text-slate-300">{selectedNodeItem.prerequisites.length ? selectedNodeItem.prerequisites.join(", ") : "None"}</p>
+										<p className="mt-2 text-sm text-slate-300">{selectedNodeItem.prerequisites.length ? selectedNodeItem.prerequisites.join(" · ") : "None"}</p>
 									</div>
 									<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
 										<p className="text-[10px] uppercase text-slate-500">Estimated time</p>
@@ -369,3 +369,4 @@ export default function PathPage() {
 		</AppShell>
 	);
 }
+

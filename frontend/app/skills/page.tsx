@@ -45,7 +45,7 @@ type Profile = {
 
 type SkillNode = SkillRecord & { roadmapStatus?: string; roadmapReason?: string };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const CATEGORIES = ["Programming", "Backend", "Database", "AI/ML", "Cloud", "DevOps", "Tools"];
 const GRAPH_GROUPS = ["Programming", "Backend", "Database", "AI/ML", "Cloud", "DevOps", "Tools"];

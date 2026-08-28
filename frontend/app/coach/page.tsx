@@ -20,7 +20,7 @@ type Profile = {
 type RoadmapItem = { skillId: string; title: string; reason: string; status: string };
 type RoadmapData = { items: RoadmapItem[]; nextBestAction: RoadmapItem | null };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const quickActions = [
 	"Why am I learning this?",

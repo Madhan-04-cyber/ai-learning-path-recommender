@@ -28,7 +28,7 @@ type SummaryResponse = {
 	assessments: Array<{ skillId: string; answer: string; correct: boolean }>;
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 function titleize(value?: string | null) {
 	return value ? value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Unavailable";

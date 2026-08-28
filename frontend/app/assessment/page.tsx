@@ -44,7 +44,7 @@ export default function AssessmentPage() {
 				}
 				const savedAnalysis = JSON.parse(window.localStorage.getItem("pathmind_analysis") || "null") as GoalContext | null;
 				if (savedAnalysis?.careerTitle && savedAnalysis.matched_career_id) { setContext(savedAnalysis); setLoading(false); return; }
-				const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/analyze-goal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: savedGoal.goal }) });
+				const response = await fetch(`/api/analyze-goal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: savedGoal.goal }) });
 				if (!response.ok) throw new Error("Goal analysis failed");
 				const data = (await response.json()) as GoalContext;
 				if (!data.careerTitle || !data.matched_career_id || data.is_ambiguous) throw new Error("That goal needs more detail before assessment.");
@@ -62,7 +62,7 @@ export default function AssessmentPage() {
 		if (!context?.matched_career_id) return;
 		setLoading(true); setError("");
 		try {
-			const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/diagnostic/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_role: context.matched_career_id }) });
+			const response = await fetch(`/api/diagnostic/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_role: context.matched_career_id }) });
 			if (!response.ok) throw new Error("We could not load the career-specific questions.");
 			const data = (await response.json()) as { questions?: DiagnosticQuestion[] };
 			if (!Array.isArray(data.questions) || data.questions.length === 0 || data.questions.some((question) => !question.questionId || !question.skillId || !question.question || !Array.isArray(question.options))) throw new Error("The diagnostic response was invalid.");
@@ -73,7 +73,7 @@ export default function AssessmentPage() {
 		if (!context?.matched_career_id || questions.some((question) => !answers[question.questionId])) { setError("Answer every question before submitting."); return; }
 		setSubmitting(true); setError("");
 		try {
-			const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/diagnostic/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_role: context.matched_career_id, known_skills: profile.knownSkills, answers: questions.map((question) => ({ questionId: question.questionId, skillId: question.skillId, answer: answers[question.questionId] })) }) });
+			const response = await fetch(`/api/diagnostic/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_role: context.matched_career_id, known_skills: profile.knownSkills, answers: questions.map((question) => ({ questionId: question.questionId, skillId: question.skillId, answer: answers[question.questionId] })) }) });
 			if (!response.ok) throw new Error("We could not calculate your result. Please try again.");
 			const data = (await response.json()) as { assessmentResults?: AssessmentResult[]; skillProficiency?: Record<string, number>; overallScore?: number };
 			if (!Array.isArray(data.assessmentResults) || !data.skillProficiency || typeof data.overallScore !== "number") throw new Error("The assessment result was invalid.");
