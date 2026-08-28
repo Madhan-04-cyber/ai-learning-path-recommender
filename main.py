@@ -4,9 +4,11 @@ import json
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
+from skill_engine import analyze_skill_gaps, build_skill_models
+from roadmap_service import Roadmap, generate_roadmap, replan_path
 
 # Initialize FastAPI App
 app = FastAPI(title="PathMind AI - Personalized Learning Path Engine")
@@ -30,6 +32,42 @@ def get_gemini_client():
             return None
     return None
 
+
+def build_coach_system_prompt(request: "ChatRequest", career_name: str) -> str:
+    """Build a bounded, context-aware coaching prompt."""
+    context_lines = [
+        f"Career goal: {career_name}",
+        f"Current page: {request.current_page or 'unknown'}",
+        f"Current milestone: {request.current_milestone or 'unknown'}",
+        f"Current skill: {request.current_skill or 'unknown'}",
+        f"Skill proficiency: {request.skill_proficiency if request.skill_proficiency is not None else 'unknown'}",
+        f"Weak areas: {', '.join(request.weak_areas) if request.weak_areas else 'unknown'}",
+        f"Learning preference: {request.learning_preference or 'unknown'}",
+        f"Active bottleneck: {request.bottleneck or 'unknown'}",
+        f"Next best action: {request.next_action or 'unknown'}",
+    ]
+    if request.recent_assessment:
+        context_lines.append(f"Recent assessment: {json.dumps(request.recent_assessment)}")
+    if request.recent_mistakes:
+        context_lines.append(f"Recent mistakes: {json.dumps(request.recent_mistakes[:5])}")
+    if request.roadmap:
+        context_lines.append(f"Roadmap snapshot: {json.dumps(request.roadmap[:8])}")
+    return f"""
+You are PathMind AI Coach.
+You are not a generic chatbot.
+You coach using only the learner context below and do not invent scores, milestones, or roadmap steps.
+
+Learner context:
+{chr(10).join(f'- {line}' for line in context_lines)}
+
+Rules:
+- Explain recommendations using actual learner data when available.
+- If the user asks to skip a skill, do not mutate the roadmap. Explain why it is or is not safe and request verification.
+- If data is unavailable, say so clearly.
+- Be concise, supportive, and specific.
+- Always output markdown.
+""".strip()
+
 # --- Career Database ---
 CAREERS = {
     "backend_ai_developer": {
@@ -42,6 +80,7 @@ CAREERS = {
             "numpy_pandas", "math_statistics", "machine_learning_basics", 
             "model_evaluation", "model_serving", "ai_apis", "rag", "docker", "cloud_deployment"
         ],
+        "optional_skills": ["backend_architecture", "embeddings", "vector_databases", "monitoring", "capstone_project"],
         "capstone_project": {
             "title": "AI-Powered Backend Microservice",
             "description": "Design and build a FastAPI backend application that integrates PostgreSQL with vector similarity search (RAG), user authentication, Docker containment, and automated deployment.",
@@ -365,7 +404,7 @@ SKILL_GRAPH = {
         "id": "rag",
         "title": "Retrieval-Augmented Generation (RAG)",
         "description": "Connecting LLMs to external data, semantic chunking, prompt templates, and citation tracking.",
-        "prerequisites": ["ai_apis", "postgresql"],
+        "prerequisites": ["ai_apis", "vector_databases"],
         "required_proficiency": 80,
         "estimated_hours": 12,
         "difficulty": "Advanced",
@@ -379,7 +418,7 @@ SKILL_GRAPH = {
         "id": "vector_databases",
         "title": "Vector Databases & Embeddings",
         "description": "ChromaDB, Pinecone, and PGVector. Storing and querying vector embeddings.",
-        "prerequisites": ["rag"],
+        "prerequisites": ["embeddings"],
         "required_proficiency": 75,
         "estimated_hours": 8,
         "difficulty": "Advanced",
@@ -663,6 +702,14 @@ SKILL_GRAPH = {
     }
 }
 
+# Extended competencies remain separate from the existing roadmap until its later phase.
+SKILL_GRAPH.update({
+    "backend_architecture": {"id": "backend_architecture", "title": "Backend Architecture", "description": "Designing reliable service boundaries, data flows, and operational concerns.", "prerequisites": ["fastapi", "postgresql"], "required_proficiency": 75, "estimated_hours": 10, "difficulty": "Advanced"},
+    "embeddings": {"id": "embeddings", "title": "Embeddings", "description": "Representing text and other data as vectors for semantic retrieval.", "prerequisites": ["ai_apis", "machine_learning_basics"], "required_proficiency": 70, "estimated_hours": 8, "difficulty": "Intermediate"},
+    "monitoring": {"id": "monitoring", "title": "Application Monitoring", "description": "Observability, health checks, metrics, logs, and alerting for deployed services.", "prerequisites": ["docker", "cloud_deployment"], "required_proficiency": 70, "estimated_hours": 6, "difficulty": "Intermediate"},
+    "capstone_project": {"id": "capstone_project", "title": "Production AI Backend Capstone", "description": "Combine backend, database, AI integration, and deployment skills in one production project.", "prerequisites": ["backend_architecture", "rag", "monitoring"], "required_proficiency": 80, "estimated_hours": 20, "difficulty": "Advanced"},
+})
+
 # Add default prerequisites and competencies if missing
 for k, v in SKILL_GRAPH.items():
     if "required_proficiency" not in v:
@@ -837,21 +884,165 @@ def calculate_bottleneck(ordered_skills: List[str], statuses: Dict[str, str], sk
     bottlenecks.sort(key=lambda x: (-x["blocked_count"], ordered_skills.index(x["skill_id"])))
     return bottlenecks[0] if bottlenecks[0]["blocked_count"] > 0 else None
 
-def calculate_career_readiness(required_skills: List[str], user_skills: Dict[str, Any], skill_graph: Dict[str, Any]) -> int:
-    """Computes the readiness score based on target and user skill proficiency gaps."""
+def calculateCareerReadiness(required_skills: List[str], user_skills: Dict[str, Any], skill_graph: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute weighted career readiness from skills, blockers, evidence, and assessments."""
     if not required_skills:
-        return 0
-    total_target = 0
-    total_user = 0
-    for s in required_skills:
-        target = skill_graph.get(s, {}).get("required_proficiency", 70)
-        u_prof = user_skills.get(s, {}).get("proficiency", 0)
-        total_target += target
-        total_user += min(u_prof, target)
-        
-    if total_target == 0:
-        return 0
-    return int((total_user / total_target) * 100)
+        return {
+            "score": 0,
+            "completedSkills": 0,
+            "totalSkills": 0,
+            "biggestGap": None,
+            "biggestBlocker": None,
+            "nextAction": None,
+        }
+
+    scored_items: List[Dict[str, Any]] = []
+    completed = 0
+    total_weight = 0.0
+    weighted_score = 0.0
+    for skill_id in required_skills:
+        meta = skill_graph.get(skill_id, {})
+        target = int(meta.get("required_proficiency", 70))
+        current = int(user_skills.get(skill_id, {}).get("proficiency", 0))
+        status = user_skills.get(skill_id, {}).get("status", "")
+        evidence = user_skills.get(skill_id, {}).get("evidence", [])
+        prereqs = meta.get("prerequisites", [])
+        dependents = [
+            other_id
+            for other_id in required_skills
+            if skill_id in skill_graph.get(other_id, {}).get("prerequisites", [])
+        ]
+        gap = max(0, target - current)
+        blocker_penalty = 35 if status in {"Needs Improvement"} else 0
+        evidence_bonus = min(15, len(evidence) * 5)
+        project_bonus = 10 if any(str(item).lower().find("project") >= 0 for item in evidence) else 0
+        assessment_bonus = min(15, int(user_skills.get(skill_id, {}).get("last_test_score", 0)) // 10)
+        critical_weight = 2.4 if not prereqs else 1.4 + (0.25 * len(prereqs))
+        blocker_weight = 1.0 + (0.35 * len(dependents))
+        skill_score = max(0, min(100, current + evidence_bonus + project_bonus + assessment_bonus - blocker_penalty))
+        weighted_score += skill_score * critical_weight * blocker_weight
+        total_weight += critical_weight * blocker_weight
+        if current >= target and status in {"Completed", "Verified"}:
+            completed += 1
+        scored_items.append({
+            "skill_id": skill_id,
+            "title": meta.get("title", skill_id),
+            "gap": gap,
+            "status": status,
+            "critical_weight": critical_weight,
+            "blocker_weight": blocker_weight,
+            "current": current,
+        })
+
+    scored_items.sort(key=lambda item: (-item["blocker_weight"], -item["critical_weight"], -item["gap"], item["skill_id"]))
+    biggest_gap = scored_items[0]["title"] if scored_items and scored_items[0]["gap"] > 0 else None
+    biggest_blocker = next((item["title"] for item in scored_items if item["status"] == "Needs Improvement"), biggest_gap)
+    next_action = None
+    for item in scored_items:
+        if item["status"] == "Needs Improvement" or item["gap"] > 0:
+            next_action = f"Complete {item['title']} Practice"
+            break
+    if next_action is None:
+        next_action = "Continue your current roadmap"
+    score = int(round((weighted_score / total_weight) if total_weight else 0))
+    return {
+        "score": max(0, min(100, score)),
+        "completedSkills": completed,
+        "totalSkills": len(required_skills),
+        "biggestGap": biggest_gap,
+        "biggestBlocker": biggest_blocker,
+        "nextAction": next_action,
+    }
+
+
+def isCareerReady(required_skills: List[str], user_skills: Dict[str, Any], skill_graph: Dict[str, Any]) -> Dict[str, Any]:
+    """Strict career-ready gate using readiness, blockers, and critical skills."""
+    readiness = calculateCareerReadiness(required_skills, user_skills, skill_graph)
+    critical_skills = [
+        skill_id
+        for skill_id in required_skills
+        if not skill_graph.get(skill_id, {}).get("prerequisites", [])
+        or len(skill_graph.get(skill_id, {}).get("prerequisites", [])) <= 1
+    ]
+    missing_critical = [
+        skill_id
+        for skill_id in critical_skills
+        if user_skills.get(skill_id, {}).get("status") not in {"Completed", "Verified"}
+        or int(user_skills.get(skill_id, {}).get("proficiency", 0)) < int(skill_graph.get(skill_id, {}).get("required_proficiency", 70))
+    ]
+    ready = readiness["score"] >= 90 and not missing_critical and readiness["biggestBlocker"] is None
+    return {
+        "ready": ready,
+        "readiness": readiness,
+        "missingCriticalSkills": missing_critical,
+        "criticalSkills": critical_skills,
+    }
+
+
+def select_adaptive_project(skill_id: str, proficiency: int, skill_graph: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a milestone project tailored to the learner level."""
+    skill_title = skill_graph.get(skill_id, {}).get("title", skill_id)
+    if proficiency < 45:
+        return {
+            "title": f"{skill_title} REST API",
+            "goal": "Build a simple working service with a single dependency chain.",
+            "skills": [skill_id],
+            "prerequisites": [],
+            "difficulty": "Beginner",
+            "estimatedTime": "4-6 hours",
+            "expectedOutput": "A small REST endpoint with validation and a basic response model.",
+            "evaluationCriteria": ["Returns correct responses", "Uses validation", "Follows route structure"],
+        }
+    if proficiency < 75:
+        return {
+            "title": f"{skill_title} ML Prediction API",
+            "goal": "Ship an API that wraps a model or analytics workflow with a reliable interface.",
+            "skills": [skill_id, "rest_apis"],
+            "prerequisites": ["rest_apis"],
+            "difficulty": "Intermediate",
+            "estimatedTime": "6-10 hours",
+            "expectedOutput": "A documented API with clear request and response contracts.",
+            "evaluationCriteria": ["Reusable API design", "Validates input", "Produces useful output"],
+        }
+    return {
+        "title": f"{skill_title} RAG-powered AI Backend",
+        "goal": "Build a production-style backend with retrieval, orchestration, and evidence capture.",
+        "skills": [skill_id, "fastapi", "postgresql", "ai_apis", "rag"],
+        "prerequisites": ["fastapi", "postgresql"],
+        "difficulty": "Advanced",
+        "estimatedTime": "10-18 hours",
+        "expectedOutput": "A backend that can retrieve context, answer queries, and store evidence.",
+        "evaluationCriteria": ["Handles retrieval flow", "Stores evidence", "Supports review and reassessment"],
+    }
+
+
+def build_contextual_resources(skill_id: str, skill_graph: Dict[str, Any], proficiency: int) -> List[Dict[str, Any]]:
+    """Return skill-linked resources with reasons and time estimates."""
+    meta = skill_graph.get(skill_id, {})
+    resources = []
+    for resource in meta.get("resources", []):
+        resources.append({
+            "title": resource.get("title"),
+            "type": resource.get("type"),
+            "skill": skill_id,
+            "difficulty": meta.get("difficulty", "Intermediate"),
+            "estimatedTime": "20-40 min",
+            "reason": f"This resource is recommended because it supports {meta.get('title', skill_id)} at your current level of {proficiency}%.",
+            "url": resource.get("url"),
+            "contentReference": resource.get("url"),
+        })
+    project = select_adaptive_project(skill_id, proficiency, skill_graph)
+    resources.append({
+        "title": project["title"],
+        "type": "Project",
+        "skill": skill_id,
+        "difficulty": project["difficulty"],
+        "estimatedTime": project["estimatedTime"],
+        "reason": f"This project is recommended because it matches your current proficiency and roadmap stage.",
+        "url": None,
+        "contentReference": project,
+    })
+    return resources
 
 def get_next_best_action(ordered_skills: List[str], statuses: Dict[str, str], skill_graph: Dict[str, Any], user_skills: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Returns exactly one primary recommended next action on the dashboard."""
@@ -950,22 +1141,114 @@ def validate_and_repair_path(ordered_skills: List[str], user_skills: Dict[str, A
 # --- Pydantic Data Models ---
 
 class GoalAnalysisRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1, max_length=500)
+
+class GoalAnalysis(BaseModel):
+    goal: str
+    careerTitle: str
+    description: str
+    requiredSkills: List[str]
+    estimatedDuration: str
+    readiness: int = Field(ge=0, le=100)
+    matched_career_id: Optional[str] = None
+    is_ambiguous: bool = False
+    clarification_question: str = ""
+    normalized_name: str = ""
+    extracted_skills: List[str] = Field(default_factory=list)
+    target_outcome: str = ""
+
+class SkillAnalysisRequest(BaseModel):
+    target_role: str
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+class RoadmapGenerationRequest(BaseModel):
+    target_role: str
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    daily_learning_minutes: int = Field(default=60, ge=1, le=1440)
+    learning_preferences: List[str] = Field(default_factory=list)
+    assessment_results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ReplanPathRequest(BaseModel):
+    target_role: str
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    daily_learning_minutes: int = Field(default=60, ge=1, le=1440)
+    trigger: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProgressSummaryRequest(BaseModel):
+    target_role: str
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    daily_learning_minutes: int = Field(default=60, ge=1, le=1440)
+    assessment_results: List[Dict[str, Any]] = Field(default_factory=list)
+    practice_history: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ResourceProjectRequest(BaseModel):
+    target_role: str
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+
+class ProjectCompletionRequest(BaseModel):
+    target_role: str
+    skill_id: str
+    project_title: str
+    score: int = Field(ge=0, le=100)
+    user_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    evidence_summary: str = ""
+
+def build_goal_analysis(goal: str, career_id: str) -> GoalAnalysis:
+    career = CAREERS[career_id]
+    required_skills = list(career.get("required_skills", []))
+    skill_count = len(required_skills)
+    duration = "3–5 months" if skill_count <= 12 else "6–9 months" if skill_count <= 18 else "9–12 months"
+    return GoalAnalysis(
+        goal=goal,
+        careerTitle=career["name"],
+        description=career["description"],
+        requiredSkills=required_skills,
+        estimatedDuration=duration,
+        readiness=0,
+        matched_career_id=career_id,
+        normalized_name=career["name"],
+        extracted_skills=[],
+        target_outcome=f"Build and grow toward a career as a {career['name']}.",
+    )
 
 class PathGenerationRequest(BaseModel):
     user_id: str
     target_role: str
     current_skills: Dict[str, Dict[str, Any]] # e.g. { "python": {"proficiency": 80, "status": "Completed"} }
-    hours_per_week: int
+    hours_per_week: int = Field(default=12, ge=1, le=80)
     learning_style: Optional[str] = "Prefer Videos"
-    feedback: Optional[List[Dict[str, Any]]] = []
+    feedback: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
 class DiagnosticRequest(BaseModel):
     skill_id: str
 
+class DiagnosticStartRequest(BaseModel):
+    target_role: str
+
+class DiagnosticQuestion(BaseModel):
+    questionId: str
+    skillId: str
+    question: str
+    options: List[str]
+    difficulty: str
+
+class DiagnosticAnswer(BaseModel):
+    questionId: str
+    skillId: str
+    answer: str
+
+class DiagnosticSubmitRequest(BaseModel):
+    target_role: str
+    known_skills: List[str] = Field(default_factory=list)
+    answers: List[DiagnosticAnswer] = Field(min_length=1)
+
 class AssessmentSubmitRequest(BaseModel):
     skill_id: str
-    score: int
+    score: int = Field(ge=0, le=100)
     user_skills: Dict[str, Dict[str, Any]]
     target_role: str
 
@@ -985,6 +1268,15 @@ class ChatRequest(BaseModel):
     history: List[Dict[str, str]]
     target_role: str
     user_skills: Dict[str, Dict[str, Any]]
+    current_page: Optional[str] = None
+    current_milestone: Optional[str] = None
+    current_skill: Optional[str] = None
+    skill_proficiency: Optional[int] = None
+    weak_areas: List[str] = Field(default_factory=list)
+    roadmap: List[Dict[str, Any]] = Field(default_factory=list)
+    recent_assessment: Optional[Dict[str, Any]] = None
+    recent_mistakes: List[Dict[str, Any]] = Field(default_factory=list)
+    learning_preference: Optional[str] = None
     bottleneck: Optional[str] = None
     next_action: Optional[str] = None
 
@@ -1003,7 +1295,196 @@ def read_root():
 def get_careers():
     return CAREERS
 
-@app.post("/api/analyze-goal")
+@app.post("/api/skills/analyze")
+def analyze_skills(request: SkillAnalysisRequest):
+    """Return normalized skill records and deterministic gap classifications."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    skill_ids = list(career.get("required_skills", [])) + list(career.get("optional_skills", []))
+    skills = build_skill_models(skill_ids, SKILL_GRAPH, request.current_skills)
+    return {"target_role": request.target_role, "skills": skills, "gaps": analyze_skill_gaps(skills)}
+
+@app.post("/api/path/generate", response_model=Roadmap)
+def generate_personalized_path(request: RoadmapGenerationRequest):
+    """Generate the deterministic personalized route without using an LLM for ordering."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    return generate_roadmap(
+        career_name=career["name"],
+        required_skill_ids=career.get("required_skills", []),
+        optional_skill_ids=career.get("optional_skills", []),
+        graph=SKILL_GRAPH,
+        current_skills=request.current_skills,
+        daily_learning_minutes=request.daily_learning_minutes,
+    )
+
+
+@app.post("/api/path/replan")
+def replan_learning_path(request: ReplanPathRequest):
+    """Recalculate the roadmap after new learner evidence or availability changes."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    result = replan_path(
+        career_name=career["name"],
+        required_skill_ids=career.get("required_skills", []),
+        optional_skill_ids=career.get("optional_skills", []),
+        graph=SKILL_GRAPH,
+        current_skills=request.current_skills,
+        daily_learning_minutes=request.daily_learning_minutes,
+        trigger=request.trigger,
+    )
+    return {
+        "changed": result.changed,
+        "explanation": result.explanation,
+        "insight": result.insight,
+        "previous_next_best_action": result.previousNextBestAction,
+        "current_next_best_action": result.currentNextBestAction,
+        "roadmap": result.roadmap,
+    }
+
+
+@app.post("/api/progress/summary")
+def progress_summary(request: ProgressSummaryRequest):
+    """Return a weighted progress snapshot grounded in actual learner evidence."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    skill_ids = list(career.get("required_skills", [])) + list(career.get("optional_skills", []))
+    skills = build_skill_models(skill_ids, SKILL_GRAPH, request.current_skills)
+    readiness = calculateCareerReadiness(career.get("required_skills", []), request.current_skills, SKILL_GRAPH)
+    roadmap = generate_roadmap(
+        career_name=career["name"],
+        required_skill_ids=career.get("required_skills", []),
+        optional_skill_ids=career.get("optional_skills", []),
+        graph=SKILL_GRAPH,
+        current_skills=request.current_skills,
+        daily_learning_minutes=request.daily_learning_minutes,
+    )
+    category_growth: Dict[str, Dict[str, Any]] = {}
+    for skill in skills:
+        bucket = category_growth.setdefault(skill.category, {"current": 0, "target": 0, "skills": 0})
+        bucket["current"] += skill.currentLevel
+        bucket["target"] += skill.requiredLevel
+        bucket["skills"] += 1
+    for bucket in category_growth.values():
+        bucket["average"] = round(bucket["current"] / bucket["skills"]) if bucket["skills"] else 0
+        bucket["target_average"] = round(bucket["target"] / bucket["skills"]) if bucket["skills"] else 0
+    readiness_gate = isCareerReady(career.get("required_skills", []), request.current_skills, SKILL_GRAPH)
+
+    weekly_activity = {
+        "learningSessions": len([item for item in request.practice_history if item.get("timestamp")]) + len([item for item in request.assessment_results if item.get("skillId")]),
+        "practice": len(request.practice_history),
+        "projects": len([skill for skill in skills if skill.status == "COMPLETED" and skill.estimatedHours >= 0]),
+        "assessments": len(request.assessment_results),
+    }
+    milestones = {
+        "completed": len([skill for skill in skills if skill.status == "COMPLETED"]),
+        "available": len([skill for skill in skills if skill.status == "AVAILABLE"]),
+        "locked": len([skill for skill in skills if skill.status == "LOCKED"]),
+    }
+    biggest_gap = readiness["biggestGap"]
+    biggest_blocker = readiness["biggestBlocker"]
+    next_action = readiness["nextAction"]
+    return {
+        "career": career["name"],
+        "readiness": readiness,
+        "readinessGate": readiness_gate,
+        "skillGrowth": category_growth,
+        "weeklyActivity": weekly_activity,
+        "milestones": milestones,
+        "assessments": request.assessment_results,
+        "projects": [skill.id for skill in skills if skill.status == "COMPLETED"],
+        "nextBestAction": roadmap.nextBestAction,
+        "biggestGap": biggest_gap,
+        "biggestBlocker": biggest_blocker,
+        "nextAction": next_action,
+    }
+
+
+@app.post("/api/resources/summary")
+def resources_summary(request: ResourceProjectRequest):
+    """Return contextual resources and adaptive projects for the learner's current skills."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    skill_ids = list(career.get("required_skills", [])) + list(career.get("optional_skills", []))
+    skills = build_skill_models(skill_ids, SKILL_GRAPH, request.current_skills)
+    resources_by_skill = []
+    projects_by_skill = []
+    for skill in skills:
+        proficiency = skill.currentLevel
+        contextual = build_contextual_resources(skill.id, SKILL_GRAPH, proficiency)
+        valid_resources = [item for item in contextual if item.get("title")]
+        resources_by_skill.append({
+            "skillId": skill.id,
+            "title": skill.name,
+            "status": skill.status,
+            "proficiency": proficiency,
+            "resources": valid_resources,
+            "weakAreas": [skill.name] if skill.status == "NEEDS_ATTENTION" else [],
+        })
+        projects_by_skill.append({
+            "skillId": skill.id,
+            "title": skill.name,
+            "status": skill.status,
+            "proficiency": proficiency,
+            "project": select_adaptive_project(skill.id, proficiency, SKILL_GRAPH),
+        })
+    return {
+        "career": career["name"],
+        "resources": resources_by_skill,
+        "projects": projects_by_skill,
+    }
+
+
+@app.post("/api/project/complete")
+def complete_project(request: ProjectCompletionRequest):
+    """Record verified project evidence and adapt the learner skill state."""
+    career = CAREERS.get(request.target_role)
+    if not career:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    if request.skill_id not in SKILL_GRAPH:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+    skill_meta = SKILL_GRAPH[request.skill_id]
+    user_skills = dict(request.user_skills)
+    evidence_entry = {
+        "label": "Project completed",
+        "value": request.project_title,
+        "score": request.score,
+        "summary": request.evidence_summary,
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+    }
+    current = dict(user_skills.get(request.skill_id, {}))
+    current_evidence = list(current.get("evidence", []))
+    current_evidence.append(evidence_entry)
+    if request.score >= 80:
+        current.update({
+            "proficiency": max(int(current.get("proficiency", 0)), skill_meta.get("required_proficiency", 70)),
+            "status": "Completed",
+            "confidence": "Verified",
+            "evidence": current_evidence,
+        })
+    else:
+        current.update({
+            "proficiency": max(0, int(current.get("proficiency", 0))),
+            "status": "Needs Improvement",
+            "confidence": "Project Review",
+            "evidence": current_evidence,
+        })
+    user_skills[request.skill_id] = current
+    return {
+        "skill_id": request.skill_id,
+        "project_title": request.project_title,
+        "score": request.score,
+        "updated_skills": user_skills,
+        "evidence": current_evidence,
+        "verification_status": "Verified" if request.score >= 80 else "Needs Review",
+    }
+
+@app.post("/api/analyze-goal", response_model=GoalAnalysis)
 def analyze_goal(request: GoalAnalysisRequest):
     """Parses natural language goal to map to a structured career template or asks a clarification question."""
     q = request.query.strip().lower()
@@ -1052,29 +1533,31 @@ def analyze_goal(request: GoalAnalysisRequest):
                 )
             )
             data = json.loads(response.text)
-            return data
+            ai_career_id = data.get("matched_career_id")
+            if ai_career_id in CAREERS and not data.get("is_ambiguous", False):
+                result = build_goal_analysis(request.query.strip(), ai_career_id)
+                result.extracted_skills = data.get("extracted_skills", [])
+                return result
         except Exception:
             pass # Fallback to static matching below
 
     # Static fallback
     if matched_career:
-        return {
-            "matched_career_id": matched_career,
-            "is_ambiguous": False,
-            "clarification_question": "",
-            "normalized_name": CAREERS[matched_career]["name"],
-            "extracted_skills": ["Python", "SQL"] if matched_career == "backend_ai_developer" else [],
-            "target_outcome": f"Work as a professional {CAREERS[matched_career]['name']}"
-        }
+        result = build_goal_analysis(request.query.strip(), matched_career)
+        result.extracted_skills = ["Python", "SQL"] if matched_career == "backend_ai_developer" else []
+        result.target_outcome = f"Work as a professional {CAREERS[matched_career]['name']}"
+        return result
     else:
-        return {
-            "matched_career_id": None,
-            "is_ambiguous": True,
-            "clarification_question": "Your goal seems interesting! Do you prefer building user interfaces (Full Stack), developing machine learning models (ML Engineer), analyzing data statistics (Data Scientist), or building AI APIs (Backend AI Developer)?",
-            "normalized_name": "",
-            "extracted_skills": [],
-            "target_outcome": ""
-        }
+        return GoalAnalysis(
+            goal=request.query.strip(),
+            careerTitle="",
+            description="",
+            requiredSkills=[],
+            estimatedDuration="",
+            readiness=0,
+            is_ambiguous=True,
+            clarification_question="I could not match that goal to a supported career track yet. Try a software, AI, data, or full-stack goal.",
+        )
 
 @app.post("/api/generate-path")
 def generate_path(request: PathGenerationRequest):
@@ -1104,7 +1587,8 @@ def generate_path(request: PathGenerationRequest):
     # 4. Calculate bottlenecks and actions
     bottleneck = calculate_bottleneck(ordered_skills, statuses, SKILL_GRAPH)
     next_action = get_next_best_action(ordered_skills, statuses, SKILL_GRAPH, request.current_skills)
-    readiness_score = calculate_career_readiness(required_skills, request.current_skills, SKILL_GRAPH)
+    readiness_summary = calculateCareerReadiness(required_skills, request.current_skills, SKILL_GRAPH)
+    readiness_score = readiness_summary["score"]
     
     # 5. Populate structured timeline
     path_items = []
@@ -1130,6 +1614,12 @@ def generate_path(request: PathGenerationRequest):
 
         # Adapt Resources if feedback indicates reinforcement is needed
         resources = list(skill_metadata.get("resources", []))
+        practice = list(skill_metadata.get("practice", []))
+        feedback_types = {
+            str(item.get("feedback_type", ""))
+            for item in request.feedback or []
+            if item.get("skill_id") == skill_id
+        }
         if statuses.get(skill_id) == "Needs Improvement":
             # Add extra study material as reinforcement
             resources.append({
@@ -1142,12 +1632,34 @@ def generate_path(request: PathGenerationRequest):
                 "type": "Course",
                 "url": "https://w3schools.com"
             })
+        if "Need more practice" in feedback_types:
+            practice.extend([
+                f"Repeat a focused {skill_metadata['title']} exercise and explain each decision.",
+                f"Build a small variation of the {skill_metadata['title']} project without following a tutorial."
+            ])
+
+        prereqs = skill_metadata.get("prerequisites", [])
+        unlock_condition = "All prerequisites verified at their target proficiency."
+        if not prereqs:
+            unlock_condition = "Available immediately; verify this skill through assessment or project work."
+        phase = "Foundation"
+        if any(token in skill_id for token in ["api", "http", "rest", "fastapi", "auth", "sql", "postgres", "node"]):
+            phase = "Build"
+        elif any(token in skill_id for token in ["machine", "model", "deep", "nlp", "llm", "rag", "vector", "numpy", "math"]):
+            phase = "Apply AI"
+        elif any(token in skill_id for token in ["docker", "cloud", "mlops", "deploy"]):
+            phase = "Ship"
+        elif index > 2:
+            phase = "Develop"
             
         path_items.append({
             "id": skill_id,
             "title": skill_metadata["title"],
             "description": skill_metadata["description"],
-            "prerequisites": skill_metadata.get("prerequisites", []),
+            "skill": skill_id,
+            "phase": phase,
+            "order": index + 1,
+            "prerequisites": prereqs,
             "required_proficiency": t_prof,
             "current_proficiency": c_prof,
             "skill_gap": gap,
@@ -1155,19 +1667,43 @@ def generate_path(request: PathGenerationRequest):
             "difficulty": skill_metadata.get("difficulty", "Intermediate"),
             "status": statuses.get(skill_id, "Locked"),
             "why_recommended": why,
+            "unlock_condition": unlock_condition,
             "resources": resources,
-            "practice": skill_metadata.get("practice", []),
+            "practice": practice,
             "project": skill_metadata.get("project", {}),
+            "assessment_required": statuses.get(skill_id) != "Completed",
             "assessment": PRESET_QUIZZES.get(skill_id, [
                 {"q": f"A primary question on {skill_metadata['title']}.", "options": ["Correct", "Wrong A", "Wrong B", "Wrong C"], "answer": "Correct"}
             ])
         })
         
+    completed_skills = [item["skill"] for item in path_items if item["status"] == "Completed"]
+    weak_skills = [item["skill"] for item in path_items if item["status"] == "Needs Improvement"]
+    next_skill = next_action["skill_id"] if next_action else None
+    current_phase = next(
+        (item["phase"] for item in path_items if item["skill"] == next_skill),
+        "Capstone",
+    )
+    phase_scores = {}
+    for item in path_items:
+        phase_scores.setdefault(item["phase"], []).append(
+            min(item["current_proficiency"] / max(item["required_proficiency"], 1), 1) * 100
+        )
+    readiness_breakdown = {
+        phase: round(sum(scores) / len(scores)) for phase, scores in phase_scores.items()
+    }
+
     return {
         "target_role": career_id,
         "target_role_name": career_info["name"],
         "target_role_description": career_info["description"],
         "readiness_score": readiness_score,
+        "readiness_summary": readiness_summary,
+        "career_readiness_breakdown": readiness_breakdown,
+        "overall_progress": readiness_score,
+        "current_phase": current_phase,
+        "completed_skills": completed_skills,
+        "weak_skills": weak_skills,
         "bottleneck": bottleneck,
         "next_action": next_action,
         "path": path_items,
@@ -1176,6 +1712,83 @@ def generate_path(request: PathGenerationRequest):
             "valid": repair_result["valid"],
             "errors": repair_result["errors"]
         }
+    }
+
+@app.post("/api/diagnostic/start")
+def start_diagnostic(request: DiagnosticStartRequest):
+    """Returns a focused, answer-key-free diagnostic for the selected career."""
+    if request.target_role not in CAREERS:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+
+    diagnostic_skills = [
+        skill_id for skill_id in [
+            "python", "oop", "git", "http_fundamentals", "rest_apis",
+            "sql_basics", "postgresql", "fastapi", "machine_learning_basics"
+        ] if skill_id in resolve_prerequisites(CAREERS[request.target_role]["required_skills"], SKILL_GRAPH)
+    ][:9]
+    questions = []
+    for skill_id in diagnostic_skills:
+        quiz = PRESET_QUIZZES.get(skill_id, [])
+        if not quiz:
+            quiz = [{
+                "q": f"Which idea is central to {SKILL_GRAPH[skill_id]['title']}?",
+                "options": ["Its core engineering concepts", "Page colors", "File names only", "None of these"],
+                "answer": "Its core engineering concepts"
+            }]
+        item = quiz[0]
+        questions.append(DiagnosticQuestion(
+            questionId=f"{skill_id}-0",
+            skillId=skill_id,
+            question=item["q"],
+            options=item["options"],
+            difficulty=SKILL_GRAPH[skill_id].get("difficulty", "Intermediate"),
+        ))
+    return {"target_role": request.target_role, "questions": questions}
+
+@app.post("/api/diagnostic/submit")
+def submit_diagnostic(request: DiagnosticSubmitRequest):
+    """Scores diagnostic answers against the server-owned question bank."""
+    if request.target_role not in CAREERS:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    allowed_skills = set(resolve_prerequisites(CAREERS[request.target_role]["required_skills"], SKILL_GRAPH))
+    results = []
+    scores_by_skill: Dict[str, List[int]] = {}
+    for answer in request.answers:
+        if answer.skillId not in allowed_skills:
+            raise HTTPException(status_code=400, detail="Question is not part of this career diagnostic.")
+        try:
+            skill_index = int(answer.questionId.rsplit("-", 1)[1])
+            if answer.skillId in PRESET_QUIZZES:
+                question = PRESET_QUIZZES[answer.skillId][skill_index]
+            elif skill_index == 0:
+                question = {
+                    "answer": "Its core engineering concepts"
+                }
+            else:
+                raise KeyError(answer.skillId)
+        except (KeyError, IndexError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid diagnostic question.")
+        correct = answer.answer == question["answer"]
+        score = 100 if correct else 0
+        scores_by_skill.setdefault(answer.skillId, []).append(score)
+        results.append({
+            "questionId": answer.questionId,
+            "skillId": answer.skillId,
+            "answer": answer.answer,
+            "correct": correct,
+            "difficulty": SKILL_GRAPH[answer.skillId].get("difficulty", "Intermediate"),
+        })
+    proficiency = {skill_id: round(sum(scores) / len(scores)) for skill_id, scores in scores_by_skill.items()}
+    for skill_id in request.known_skills:
+        if skill_id in allowed_skills and skill_id not in proficiency:
+            proficiency[skill_id] = 25
+    overall_score = round(sum(proficiency.values()) / len(proficiency)) if proficiency else 0
+    return {
+        "target_role": request.target_role,
+        "assessmentResults": results,
+        "skillProficiency": proficiency,
+        "overallScore": overall_score,
+        "verifiedSkills": [skill_id for skill_id, score in proficiency.items() if score >= 75],
     }
 
 @app.post("/api/get-diagnostic")
@@ -1336,6 +1949,7 @@ def submit_feedback(request: FeedbackSubmitRequest):
     return {
         "skill_id": skill_id,
         "updated_skills": user_skills,
+        "feedback_event": {"skill_id": skill_id, "feedback_type": feedback},
         "adaptation_log": adaptation_log
     }
 
@@ -1391,23 +2005,7 @@ def chat_assistant(request: ChatRequest):
     career_name = CAREERS.get(request.target_role, {}).get("name", request.target_role)
     active_skills = [k for k, v in request.user_skills.items() if v.get("status") in ["Completed", "Verified"]]
     weak_skills = [k for k, v in request.user_skills.items() if v.get("status") == "Needs Improvement"]
-    
-    system_prompt = f"""
-    You are PathMind AI Companion - an Intelligent GPS learning assistant.
-    The user is currently pursuing the career: "{career_name}".
-    
-    Current Roadmap Context:
-    - Mastered / Verified Skills: {', '.join(active_skills) if active_skills else 'None'}
-    - Weak / Needs Improvement Skills: {', '.join(weak_skills) if weak_skills else 'None'}
-    - Active Bottleneck Skill: {request.bottleneck or 'None identified'}
-    - Next Best Action: {request.next_action or 'Complete capstone project!'}
-    
-    Guidance:
-    - Keep responses concise, supportive, and grounded in structural skill graphs.
-    - If the user asks to skip a skill or challenges a prerequisite (e.g., 'Can I skip HTTP?'), explain how the skill connects to downstream blockers (e.g. FastAPI database auth depends on HTTP/REST).
-    - If the user has low commitment (e.g., 'I have 1 hour'), explain how the roadmap adapts pacing, but keeps prerequisites strict to prevent learning failures.
-    - Always output response in markdown.
-    """
+    system_prompt = build_coach_system_prompt(request, career_name)
     
     if client:
         try:
@@ -1424,11 +2022,21 @@ def chat_assistant(request: ChatRequest):
                     system_instruction=system_prompt
                 )
             )
-            return {"response": response.text}
+            text = (response.text or "").strip()
+            if not text:
+                raise ValueError("Empty AI response")
+            return {"response": text}
         except Exception as e:
-            return {"response": f"Error calling Gemini: {str(e)}. Direct Fallback: Let's discuss your plan for {career_name}! Your next best action is {request.next_action}."}
+            skip_requested = "skip" in request.message.lower()
+            if skip_requested:
+                return {"response": f"Not recommended yet.\n\n{request.current_skill or 'This skill'} is still part of your current path. Use the verification assessment or complete the prerequisite steps before skipping it.\n\nIf you want, I can explain the specific blocker and the fastest safe verification path."}
+            return {"response": f"I’m having trouble reaching the AI service right now. Based on your current context for **{career_name}**, the safest next step is **{request.next_action or 'your next roadmap item'}**."}
             
     # Simple Static Fallback
+    if "skip" in request.message.lower():
+        return {
+            "response": f"Not recommended yet.\n\n{request.current_skill or 'This skill'} is still part of your current path. You can either complete it or take a verification assessment before we consider skipping it."
+        }
     return {
-        "response": f"Hello! As your AI Learning Twin for **{career_name}**, I'm here to guide you. Currently, your Next Best Action is **{request.next_action or 'study next milestone'}** due to it blocking downstream competencies. Let me know how I can clarify key concepts!"
+        "response": f"Hello! As your AI Learning Coach for **{career_name}**, I’m here to guide your next step. Your current best action is **{request.next_action or 'study the next roadmap item'}**."
     }

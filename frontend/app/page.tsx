@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import LandingPage from "./components/landing-page";
 import { 
   BrainCircuit, 
   Target, 
@@ -22,7 +23,18 @@ import {
   ExternalLink,
   MessageSquare,
   Send,
-  ArrowLeftRight
+  ArrowLeftRight,
+  LayoutDashboard,
+  ListChecks,
+  SlidersHorizontal,
+  UserRound,
+  Home,
+  Map,
+  BarChart3,
+  BookOpen,
+  Bell,
+  Search,
+  Settings
 } from "lucide-react";
 
 // Inline Custom SVG Github Icon to avoid Lucide import version issues
@@ -41,7 +53,7 @@ const DEFAULT_CAREER_LIST = [
   { id: "full_stack_developer", name: "Full Stack Developer" }
 ];
 
-export default function Dashboard() {
+export function LegacyDashboard() {
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
   // --- Core State ---
@@ -84,6 +96,9 @@ export default function Dashboard() {
   const [microMode, setMicroMode] = useState(false);
   const [careersList, setCareersList] = useState<any[]>(DEFAULT_CAREER_LIST);
   const [showGoalInputForm, setShowGoalInputForm] = useState(true);
+  const [activeView, setActiveView] = useState<"today" | "path" | "coach" | "profile" | "explore" | "opportunities" | "skills" | "progress" | "resources">("today");
+  const [showDemoMode, setShowDemoMode] = useState(false);
+  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
 
   // Transition History log
   const [transitionMessage, setTransitionMessage] = useState<string>("");
@@ -151,9 +166,13 @@ export default function Dashboard() {
       
       if (data.is_ambiguous) {
         setChatMessages(prev => [
-          ...prev,
-          { role: "user", content: `Goal query: "${naturalGoalInput}"` },
-          { role: "model", content: `🤖 Clarification Required:\n\n${data.clarification_question}` }
+          ...(prev.at(-2)?.content === `Goal query: "${naturalGoalInput}"` && prev.at(-1)?.content?.includes(data.clarification_question)
+            ? prev
+            : [
+                ...prev,
+                { role: "user", content: `Goal query: "${naturalGoalInput}"` },
+                { role: "model", content: `🤖 Clarification Required:\n\n${data.clarification_question}` }
+              ])
         ]);
         // Set goal input to empty to let user ask in chat or type again
       } else if (data.matched_career_id) {
@@ -209,7 +228,8 @@ export default function Dashboard() {
           target_role: role,
           current_skills: currentSkills,
           hours_per_week: profile.hours_per_week || 12,
-          learning_style: profile.learning_style || "Prefer Videos"
+          learning_style: profile.learning_style || "Prefer Videos",
+          feedback: profile.feedback || []
         }),
       });
       const data = await res.json();
@@ -282,7 +302,8 @@ export default function Dashboard() {
       // Update local profile state
       setProfile((prev: any) => ({
         ...prev,
-        user_skills: data.updated_skills
+        user_skills: data.updated_skills,
+        feedback: [...(prev.feedback || []), data.feedback_event].filter(Boolean)
       }));
 
       // Trigger recalculation of the path
@@ -315,7 +336,8 @@ export default function Dashboard() {
       
       setProfile((prev: any) => ({
         ...prev,
-        user_skills: data.updated_skills
+        user_skills: data.updated_skills,
+        target_role: targetRole
       }));
 
       triggerGeneratePath(targetRole, data.updated_skills);
@@ -513,230 +535,160 @@ export default function Dashboard() {
     triggerGeneratePath("backend_ai_developer", {});
   };
 
-  // --- SVG Tree Layout Logic for Dependency Graph ---
+  // --- Focused curriculum: foundations first, dependent skills on demand ---
   const renderDependencyGraph = () => {
     if (!pathData || !pathData.path) return null;
     const pathItems = pathData.path;
-    
-    // 1. Calculate depths
-    const depths: Record<string, number> = {};
-    const getDepth = (id: string): number => {
-      if (id in depths) return depths[id];
-      const item = pathItems.find((p: any) => p.id === id);
-      if (!item || !item.prerequisites || item.prerequisites.length === 0) {
-        depths[id] = 0;
-        return 0;
-      }
-      const prereqDepths = item.prerequisites.map((p: string) => getDepth(p));
-      depths[id] = Math.max(...prereqDepths) + 1;
-      return depths[id];
+    const coreTopics = pathItems.filter((item: any) => !item.prerequisites?.length);
+    const dependentSkills = (topicId: string) => pathItems.filter((item: any) => item.prerequisites?.includes(topicId));
+    const statusStyles: Record<string, string> = {
+      Completed: "border-emerald-500/40 bg-emerald-950/20",
+      Available: "border-teal-500/40 bg-teal-950/10",
+      "In Progress": "border-indigo-500/40 bg-indigo-950/10",
+      "Needs Improvement": "border-amber-500/40 bg-amber-950/10",
+      Locked: "border-slate-800 bg-slate-900/50 opacity-70"
     };
-
-    pathItems.forEach((p: any) => getDepth(p.id));
-    
-    // Group nodes by depth
-    const levels: Record<number, string[]> = {};
-    pathItems.forEach((p: any) => {
-      const d = depths[p.id] || 0;
-      if (!levels[d]) levels[d] = [];
-      levels[d].push(p.id);
-    });
-
-    const maxDepth = Math.max(...Object.keys(levels).map(Number), 0);
-    const height = (maxDepth + 1) * 110 + 60;
-    const width = 800;
-    const nodeRadius = 24;
-
-    // Map skill_id to (x, y) coordinates
-    const coords: Record<string, { x: number; y: number }> = {};
-    Object.keys(levels).forEach(levelStr => {
-      const lvl = parseInt(levelStr);
-      const levelNodes = levels[lvl];
-      const count = levelNodes.length;
-      
-      levelNodes.forEach((id, index) => {
-        const x = (width / (count + 1)) * (index + 1);
-        const y = lvl * 110 + 65;
-        coords[id] = { x, y };
-      });
-    });
-
-    // Draw connection paths
-    const edges: React.ReactNode[] = [];
-    pathItems.forEach((p: any) => {
-      const targetCoords = coords[p.id];
-      if (p.prerequisites && targetCoords) {
-        p.prerequisites.forEach((prereqId: string) => {
-          const sourceCoords = coords[prereqId];
-          if (sourceCoords) {
-            const isCompleted = profile.user_skills[prereqId]?.status === "Completed";
-            edges.push(
-              <g key={`edge-${prereqId}-${p.id}`}>
-                <line
-                  x1={sourceCoords.x}
-                  y1={sourceCoords.y + 12}
-                  x2={targetCoords.x}
-                  y2={targetCoords.y - 12}
-                  stroke={isCompleted ? "#10b981" : "#334155"}
-                  strokeWidth={isCompleted ? "3" : "1.5"}
-                  strokeDasharray={isCompleted ? "" : "3,3"}
-                  className="transition-all duration-500"
-                />
-              </g>
-            );
-          }
-        });
-      }
-    });
-
-    // Draw node SVGs
-    const nodes = pathItems.map((p: any) => {
-      const coord = coords[p.id];
-      if (!coord) return null;
-      
-      const isActive = activeSkillId === p.id;
-      const isBottleneck = pathData.bottleneck && pathData.bottleneck.skill_id === p.id;
-      
-      // Determine colors based on status
-      let strokeColor = "stroke-slate-700";
-      let fillColor = "fill-slate-900";
-      let textColor = "fill-slate-400";
-      let statusIcon = "";
-      
-      if (p.status === "Completed") {
-        strokeColor = "stroke-emerald-500";
-        fillColor = "fill-emerald-950/90";
-        textColor = "fill-emerald-300";
-        statusIcon = "✓";
-      } else if (p.status === "Needs Improvement") {
-        strokeColor = "stroke-amber-500";
-        fillColor = "fill-amber-950/90";
-        textColor = "fill-amber-300";
-        statusIcon = "⚠";
-      } else if (p.status === "In Progress") {
-        strokeColor = "stroke-indigo-400";
-        fillColor = "fill-indigo-950/80";
-        textColor = "fill-indigo-200";
-        statusIcon = "🔵";
-      } else if (p.status === "Available") {
-        strokeColor = "stroke-teal-400";
-        fillColor = "fill-slate-900";
-        textColor = "fill-teal-300";
-        statusIcon = "🟢";
-      }
-
-      return (
-        <g 
-          key={`node-${p.id}`} 
-          transform={`translate(${coord.x}, ${coord.y})`}
-          className="cursor-pointer group"
-          onClick={() => setActiveSkillId(p.id)}
-        >
-          {/* Pulsing ring for active or bottleneck */}
-          {(isActive || isBottleneck) && (
-            <circle
-              r={nodeRadius + 6}
-              fill="none"
-              className={`animate-ping stroke-2 ${isBottleneck ? "stroke-red-500/40" : "stroke-indigo-500/40"}`}
-              style={{ animationDuration: "3s" }}
-            />
-          )}
-          
-          <circle
-            r={nodeRadius}
-            className={`${fillColor} ${strokeColor} ${isActive ? "stroke-3" : "stroke-2"} transition-all duration-300 shadow-lg`}
-          />
-          
-          {/* Text inside node (Truncated abbreviation) */}
-          <text
-            textAnchor="middle"
-            dy=".3em"
-            className={`text-[9px] font-mono font-bold tracking-tighter select-none ${textColor}`}
-          >
-            {p.id.slice(0, 5).toUpperCase()}
-          </text>
-
-          {/* Small badge for bottleneck warning */}
-          {isBottleneck && (
-            <circle
-              cx={nodeRadius - 4}
-              cy={-nodeRadius + 4}
-              r="7"
-              className="fill-red-600 stroke-slate-950 stroke-1"
-            />
-          )}
-          {isBottleneck && (
-            <text
-              x={nodeRadius - 4}
-              y={-nodeRadius + 6}
-              textAnchor="middle"
-              className="fill-white text-[8px] font-bold select-none"
-            >
-              !
-            </text>
-          )}
-
-          {/* Node tooltip label */}
-          <g className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-            <rect
-              x="-60"
-              y="-42"
-              width="120"
-              height="16"
-              rx="4"
-              className="fill-slate-900/95 stroke-slate-800 stroke-1"
-            />
-            <text
-              y="-31"
-              textAnchor="middle"
-              className="fill-slate-200 text-[8px] font-sans font-semibold"
-            >
-              {p.title}
-            </text>
-          </g>
-        </g>
-      );
-    });
-
     return (
-      <div className="w-full overflow-x-auto bg-slate-950/80 border border-slate-900 p-4 rounded-xl shadow-inner scrollbar-thin scrollbar-thumb-slate-800">
-        <div className="min-w-[800px] mx-auto relative">
-          <svg width="100%" height={height} viewBox={`0 0 800 ${height}`}>
-            {edges}
-            {nodes}
-          </svg>
+      <div className="bg-slate-950/80 border border-slate-900 rounded-xl p-4 shadow-inner">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <p className="text-xs font-bold text-white">Start with the core topics</p>
+            <p className="text-[10px] text-slate-500 mt-1">Choose one topic to see the skills it unlocks.</p>
+          </div>
+          <span className="text-[10px] text-slate-500">{coreTopics.length} foundations</span>
         </div>
-        <div className="flex gap-4 justify-center items-center text-[10px] font-semibold text-slate-400 mt-2">
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-950 border border-emerald-500 inline-block"></span> Completed</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-teal-950 border border-teal-400 inline-block"></span> Available</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-950 border border-indigo-400 inline-block"></span> In Progress</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-700 inline-block"></span> Locked</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-950 border border-amber-500 inline-block"></span> Needs Work</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-950 border border-red-500 inline-block animate-pulse"></span> Bottleneck</span>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {coreTopics.map((p: any, index: number) => {
+            const isExpanded = expandedTopicId === p.id;
+            const children = dependentSkills(p.id);
+            return (
+              <div key={p.id} className="space-y-2">
+                <button
+                  onClick={() => {
+                    setExpandedTopicId(isExpanded ? null : p.id);
+                    setActiveSkillId(p.id);
+                  }}
+                  className={`w-full text-left rounded-xl border p-4 transition-all ${statusStyles[p.status] || statusStyles.Locked} ${isExpanded ? "ring-2 ring-emerald-400/70" : "hover:border-slate-600"}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${p.status === "Completed" ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-slate-300"}`}>{p.status === "Completed" ? "✓" : index + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-white">{p.title}</span>
+                      <span className="mt-1 block text-[10px] text-slate-400">{p.current_proficiency}% current / {p.required_proficiency}% target · {p.estimated_hours} hrs</span>
+                      <span className="mt-2 block text-[10px] font-bold uppercase tracking-wider text-emerald-400">{isExpanded ? "Hide next skills" : `Show ${children.length} next skill${children.length === 1 ? "" : "s"}`}</span>
+                    </span>
+                    <span className="text-lg leading-none text-slate-500">{isExpanded ? "−" : "+"}</span>
+                  </div>
+                </button>
+                {isExpanded && children.length > 0 && (
+                  <div className="ml-5 border-l border-emerald-500/30 pl-4 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">After {p.title}</p>
+                    {children.map((child: any) => (
+                      <button key={child.id} onClick={() => setActiveSkillId(child.id)} className={`w-full rounded-lg border p-3 text-left transition-colors ${statusStyles[child.status] || statusStyles.Locked} hover:border-emerald-400/50`}>
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white">{child.title}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{child.status}</span>
+                        </span>
+                        <span className="mt-1 block text-[10px] text-slate-500">{child.current_proficiency}% current · {child.estimated_hours} hrs</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isExpanded && children.length === 0 && <p className="ml-5 text-[10px] text-slate-500">This is a starting topic. Complete it to unlock the next route.</p>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-semibold text-slate-400">
+          <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />Completed</span>
+          <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-teal-400" />Available</span>
+          <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-400" />Needs work</span>
+          <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-600" />Locked</span>
         </div>
       </div>
     );
   };
 
   const activeSkill = pathData?.path.find((p: any) => p.id === activeSkillId);
+  const primaryNavigation = [
+    { id: "today", label: "Home", icon: Home },
+    { id: "path", label: "My Path", icon: Map },
+    { id: "skills", label: "Skills", icon: Target },
+    { id: "coach", label: "AI Coach", icon: MessageSquare },
+    { id: "progress", label: "Progress", icon: BarChart3 }
+  ];
+  const secondaryNavigation = [
+    { id: "resources", label: "Resources", icon: BookOpen },
+    { id: "profile", label: "Profile", icon: UserRound }
+  ];
+  const navigateTo = (view: string) => setActiveView(view as typeof activeView);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-950 pb-20 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950 md:pb-0 md:pl-60">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 border-r border-slate-800 bg-slate-950/95 px-4 py-6 md:flex md:flex-col">
+        <button onClick={() => navigateTo("today")} className="mb-8 text-left">
+          <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400"><Sparkles className="h-3.5 w-3.5" /> PathMind AI</span>
+          <span className="mt-2 block text-xs text-slate-500">Your learning GPS</span>
+        </button>
+        <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600">Main</p>
+        <nav className="space-y-1">
+          {primaryNavigation.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => navigateTo(id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs font-bold transition-colors ${activeView === id ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:bg-slate-900 hover:text-white"}`}>
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+        </nav>
+        <div className="my-6 border-t border-slate-800" />
+        <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600">Explore</p>
+        <nav className="space-y-1">
+          {secondaryNavigation.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => navigateTo(id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs font-bold transition-colors ${activeView === id ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:bg-slate-900 hover:text-white"}`}>
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+          <button onClick={() => navigateTo("profile")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs font-bold text-slate-400 transition-colors hover:bg-slate-900 hover:text-white">
+            <Settings className="h-4 w-4" /> Settings
+          </button>
+        </nav>
+        <div className="mt-auto rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Current goal</p>
+          <p className="mt-1 text-xs font-bold text-white">{pathData?.target_role_name || "Backend AI Developer"}</p>
+          <p className="mt-2 text-[10px] text-emerald-400">{pathData?.readiness_score || 0}% career ready</p>
+        </div>
+      </aside>
       
       {/* Top Header */}
-      <header className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-900/30 pb-4 mb-6 gap-4">
+      <header className="mx-auto flex max-w-7xl items-center justify-between border-b border-emerald-900/30 px-4 py-4 md:px-8">
         <div>
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs tracking-widest uppercase mb-1">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> AI Learning GPS Engine
-          </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400">
-            PathMind AI
-          </h1>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{activeView === "today" ? "Your learning dashboard" : activeView === "path" ? "Your roadmap" : activeView === "coach" ? "Your AI mentor" : activeView === "profile" ? "Your profile" : activeView === "skills" ? "Skill passport" : activeView === "progress" ? "Your growth" : "Explore your route"}</p>
+          <h1 className="mt-1 text-xl font-black text-white md:text-2xl">{activeView === "today" ? `Good morning, ${profile.name || "Learner"}` : primaryNavigation.concat(secondaryNavigation).find((item) => item.id === activeView)?.label || "PathMind AI"}</h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button className="hidden items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-[10px] text-slate-500 sm:flex" aria-label="Search"><Search className="h-3.5 w-3.5" /> Search</button>
+          <button className="rounded-lg border border-slate-800 p-2 text-slate-400 hover:text-white" aria-label="Notifications"><Bell className="h-4 w-4" /></button>
+          <button onClick={() => navigateTo("coach")} className="hidden items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[10px] font-bold text-white sm:flex"><MessageSquare className="h-3.5 w-3.5" /> AI Coach</button>
+          <button onClick={() => navigateTo("profile")} className="rounded-lg border border-slate-800 p-2 text-slate-400 hover:text-white" aria-label="Profile"><UserRound className="h-4 w-4" /></button>
+          <nav className="hidden" aria-label="Main navigation">
+            {[
+              { id: "today", label: "Start here", icon: LayoutDashboard },
+              { id: "explore", label: "Explore careers", icon: Target },
+              { id: "path", label: "My roadmap", icon: ListChecks },
+              { id: "opportunities", label: "Opportunities", icon: Code2 },
+              { id: "coach", label: "Coach", icon: MessageSquare },
+              { id: "profile", label: "Profile", icon: UserRound }
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => navigateTo(id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeView === id ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white hover:bg-slate-800"}`}
+              >
+                <Icon className="w-3.5 h-3.5" /> {label}
+              </button>
+            ))}
+          </nav>
           {/* Quick toggle settings */}
-          <div className="flex items-center gap-2 bg-slate-900/90 border border-emerald-500/20 p-1.5 rounded-xl text-xs">
+          <div className={`flex items-center gap-2 bg-slate-900/90 border border-emerald-500/20 p-1.5 rounded-xl text-xs ${activeView === "profile" ? "" : "hidden"}`}>
             <span className="text-[10px] text-slate-400 px-1 font-medium">Commitment:</span>
             <select 
               value={profile.hours_per_week} 
@@ -755,7 +707,7 @@ export default function Dashboard() {
 
           <button
             onClick={() => setMicroMode(!microMode)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all duration-300 shadow-md ${
+            className={`${activeView === "profile" ? "" : "hidden"} px-3 py-1.5 text-xs font-bold rounded-xl transition-all duration-300 shadow-md ${
               microMode 
                 ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-amber-500/10" 
                 : "bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/10"
@@ -763,11 +715,19 @@ export default function Dashboard() {
           >
             {microMode ? "⚡ Micro-Task (15 mins)" : "📚 Enterprise Deep-Dive"}
           </button>
+          <button
+            onClick={() => setShowDemoMode(!showDemoMode)}
+            className="p-2 text-slate-400 hover:text-emerald-300 border border-slate-800 rounded-lg transition-colors"
+            aria-label="Toggle adaptive demo controls"
+            title="Adaptive demo controls"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
       {/* Floating Demo Simulation Panel for Judges */}
-      <div className="max-w-7xl mx-auto mb-6 bg-gradient-to-r from-slate-900 to-indigo-950/80 border border-indigo-500/30 rounded-xl p-4 shadow-xl">
+      {showDemoMode && <div className="max-w-7xl mx-auto mb-6 bg-gradient-to-r from-slate-900 to-indigo-950/80 border border-indigo-500/30 rounded-xl p-4 shadow-xl">
         <h3 className="text-xs font-extrabold text-indigo-300 uppercase tracking-widest mb-3 flex items-center gap-2">
           <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400/20 animate-pulse" /> Adaptive Demo Mode (Judges Sandbox)
         </h3>
@@ -849,7 +809,7 @@ export default function Dashboard() {
           </div>
 
         </div>
-      </div>
+      </div>}
 
       {transitionMessage && (
         <div className="max-w-7xl mx-auto mb-4 bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3 text-xs text-emerald-300 font-semibold flex items-center gap-2">
@@ -861,13 +821,13 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Left Column: Goal Analyzer & Readiness metrics */}
-        <div className="space-y-6">
+        <div className={`space-y-6 ${activeView !== "today" && activeView !== "profile" && activeView !== "explore" && activeView !== "opportunities" ? "hidden" : ""}`}>
           
           {/* Career Goal Analyzer Panel */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden backdrop-blur-md">
+          <div className={`bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden backdrop-blur-md ${activeView === "profile" || activeView === "explore" ? "" : "hidden"}`}>
             <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
             <h2 className="text-md font-bold text-white mb-3 flex items-center gap-2">
-              <Target className="w-4 h-4 text-emerald-400" /> 1. Set Your Career Goal
+              <Target className="w-4 h-4 text-emerald-400" /> {activeView === "explore" ? "Find your direction" : "Career goal & preferences"}
             </h2>
 
             <div className="space-y-3">
@@ -914,11 +874,28 @@ export default function Dashboard() {
                   </form>
                 )}
               </div>
+
+              <div className="border-t border-slate-800/60 pt-3 space-y-2">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Study preferences</p>
+                <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
+                  <span>Learning style</span>
+                  <select
+                    value={profile.learning_style || "Prefer Videos"}
+                    onChange={(e) => setProfile((p: any) => ({ ...p, learning_style: e.target.value }))}
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-emerald-400 outline-none focus:border-emerald-500"
+                  >
+                    <option>Prefer Videos</option>
+                    <option>Prefer Projects</option>
+                    <option>Prefer Reading</option>
+                  </select>
+                </label>
+                <p className="text-[10px] text-slate-500">Your path uses these preferences when ranking resources and pacing milestones.</p>
+              </div>
             </div>
           </div>
 
           {/* Job Readiness Index Card */}
-          <div className="bg-slate-900/80 border border-indigo-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden backdrop-blur-md">
+          <div className={`bg-slate-900/80 border border-indigo-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden backdrop-blur-md ${activeView === "today" ? "" : "hidden"}`}>
             <h2 className="text-md font-bold text-white mb-2.5 flex items-center gap-2">
               <Gauge className="w-4 h-4 text-indigo-400" /> Career Readiness Score
             </h2>
@@ -948,7 +925,7 @@ export default function Dashboard() {
           </div>
 
           {/* Persistent Floating Roadmap-Aware Chat Twin */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col min-h-[320px] max-h-[380px] backdrop-blur-md">
+          <div className="hidden">
             <h2 className="text-md font-bold text-white mb-2 flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-emerald-400" /> Learning GPS Companion
             </h2>
@@ -1013,10 +990,67 @@ export default function Dashboard() {
         </div>
 
         {/* Center & Right Column: Interactive Graph & Active Skill Panel */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={`${activeView === "path" || activeView === "opportunities" ? "lg:col-span-3" : "lg:col-span-2"} space-y-6 ${activeView === "profile" || activeView === "coach" || activeView === "explore" ? "hidden" : ""}`}>
+          {activeView === "opportunities" && (
+            <section className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+              <div className="max-w-2xl mb-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Build your evidence</p>
+                <h2 className="mt-2 text-2xl font-black text-white">Turn learning into opportunities.</h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">Small projects and verified milestones make your progress visible. Start with the opportunity that matches your current route.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {[
+                  { title: "Practice lab", text: "Strengthen the skill currently slowing your route.", action: "Open next skill", onClick: () => { setActiveView("path"); if (pathData?.next_action?.skill_id) setActiveSkillId(pathData.next_action.skill_id); } },
+                  { title: "Mini project", text: "Build a small proof of work from your active milestone.", action: "View roadmap", onClick: () => setActiveView("path") },
+                  { title: "Project review", text: "Submit a GitHub project and verify what you can do.", action: "Choose milestone", onClick: () => setActiveView("path") }
+                ].map((item) => (
+                  <div key={item.title} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                    <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400"><Code2 className="h-4 w-4" /></div>
+                    <h3 className="text-sm font-bold text-white">{item.title}</h3>
+                    <p className="mt-2 min-h-10 text-xs leading-relaxed text-slate-400">{item.text}</p>
+                    <button onClick={item.onClick} className="mt-4 text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300">{item.action} <ArrowRight className="ml-1 inline h-3 w-3" /></button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {activeView === "skills" && pathData && (
+            <section className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+              <div className="mb-6"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Your skill passport</p><h2 className="mt-2 text-2xl font-black text-white">What you can do today</h2><p className="mt-2 text-sm text-slate-400">Verified skills are green. Practice and assessment move skills forward.</p></div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {pathData.path.map((skill: any) => (
+                  <button key={skill.id} onClick={() => { setActiveSkillId(skill.id); setActiveView("path"); }} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left hover:border-emerald-500/50">
+                    <div className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-white">{skill.title}</span><span className={`text-[10px] font-bold ${skill.status === "Completed" ? "text-emerald-400" : skill.status === "Needs Improvement" ? "text-amber-400" : "text-slate-500"}`}>{skill.status}</span></div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className={`h-full ${skill.status === "Completed" ? "bg-emerald-400" : skill.status === "Needs Improvement" ? "bg-amber-400" : "bg-indigo-400"}`} style={{ width: `${Math.min(100, skill.current_proficiency)}%` }} /></div>
+                    <p className="mt-2 text-[10px] text-slate-500">{skill.current_proficiency}% current · {skill.required_proficiency}% target</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {activeView === "progress" && pathData && (
+            <section className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+              <div className="mb-6"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Career readiness</p><h2 className="mt-2 text-2xl font-black text-white">Your growth so far</h2></div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"><p className="text-[10px] uppercase text-slate-500">Readiness</p><p className="mt-2 text-3xl font-black text-indigo-400">{pathData.readiness_score}%</p></div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"><p className="text-[10px] uppercase text-slate-500">Verified skills</p><p className="mt-2 text-3xl font-black text-emerald-400">{pathData.completed_skills?.length || 0}<span className="text-base text-slate-500"> / {pathData.path.length}</span></p></div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"><p className="text-[10px] uppercase text-slate-500">Current phase</p><p className="mt-2 text-lg font-black text-white">{pathData.current_phase || "Foundation"}</p></div>
+              </div>
+              <div className="mt-6 space-y-3"><h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Skill growth</h3>{pathData.path.map((skill: any) => <div key={skill.id}><div className="mb-1 flex justify-between text-xs"><span className="text-slate-300">{skill.title}</span><span className="text-slate-500">{skill.current_proficiency}%</span></div><div className="h-2 rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.min(100, skill.current_proficiency)}%` }} /></div></div>)}</div>
+            </section>
+          )}
+
+          {activeView === "resources" && pathData && (
+            <section className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+              <div className="mb-6"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Recommended for your route</p><h2 className="mt-2 text-2xl font-black text-white">Resources</h2><p className="mt-2 text-sm text-slate-400">Resources are attached to the skills you need next, not a generic course catalog.</p></div>
+              <div className="grid gap-3 md:grid-cols-2">{pathData.path.filter((skill: any) => skill.status !== "Completed").slice(0, 6).flatMap((skill: any) => (skill.resources || []).slice(0, 2).map((resource: any) => <a key={`${skill.id}-${resource.title}`} href={resource.url} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 hover:border-emerald-500/50"><span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">{resource.type} · {skill.title}</span><span className="mt-2 block text-sm font-bold text-white">{resource.title}</span><span className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">Open resource <ExternalLink className="h-3 w-3" /></span></a>))}</div>
+            </section>
+          )}
           
           {/* KPIs Bar */}
-          {pathData && (
+          {pathData && activeView === "today" && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               
               {/* Next Best Action Card */}
@@ -1095,7 +1129,7 @@ export default function Dashboard() {
           )}
 
           {/* SVG Dependency Graph Widget */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-md">
+          <div className={`bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-md ${activeView !== "path" ? "hidden" : ""}`}>
             <h2 className="text-md font-bold text-white mb-3.5 flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-emerald-400" /> 2. Interactive SVG Skill Dependency Graph
             </h2>
@@ -1103,7 +1137,8 @@ export default function Dashboard() {
           </div>
 
           {/* Active Skill Workspace details */}
-          {activeSkill ? (
+          {activeView === "path" && (
+            activeSkill ? (
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md">
               
               {/* Header section */}
@@ -1305,10 +1340,10 @@ export default function Dashboard() {
               <Code2 className="w-10 h-10 text-slate-600 mx-auto mb-2" />
               <p className="text-xs text-slate-500">Generating roadmaps... Click on a skill node on the graph to display full detail workspace.</p>
             </div>
-          )}
+          ))}
 
           {/* Reset profile configuration */}
-          <div className="flex justify-between items-center bg-slate-900/30 border border-slate-900/80 p-3 rounded-xl text-xs text-slate-500">
+          <div className={`flex justify-between items-center bg-slate-900/30 border border-slate-900/80 p-3 rounded-xl text-xs text-slate-500 ${activeView === "today" ? "hidden" : ""}`}>
             <span>Need to start from zero or adjust settings?</span>
             <button
               onClick={handleResetProfile}
@@ -1320,7 +1355,44 @@ export default function Dashboard() {
 
         </div>
 
+        {activeView === "coach" && (
+          <div className="lg:col-span-3 max-w-3xl mx-auto w-full">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col min-h-[560px] backdrop-blur-md">
+              <h2 className="text-md font-bold text-white mb-2 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-400" /> Learning GPS Companion
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">Ask about your current milestone, prerequisites, or how to adjust your route.</p>
+              <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-slate-950/70 border border-slate-900/80 rounded-xl text-xs scrollbar-thin scrollbar-thumb-slate-800">
+                {chatMessages.map((m, idx) => (
+                  <div key={idx} className={`p-3 rounded-xl leading-relaxed whitespace-pre-wrap ${m.role === "user" ? "bg-indigo-950/50 text-indigo-200 ml-8 border border-indigo-900/20" : "bg-slate-900 text-slate-300 mr-8 border border-slate-800/50"}`}>
+                    <span className="font-bold block text-[10px] uppercase tracking-wider mb-1 text-slate-400">{m.role === "user" ? "You" : "PathMind AI"}</span>
+                    {m.content}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="flex flex-wrap gap-1.5 my-3">
+                <button onClick={() => askShortcutChat("Why am I learning this next?")} className="text-[10px] bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 px-2.5 py-1 rounded-full">Why this next?</button>
+                <button onClick={() => askShortcutChat("Can I skip this module?")} className="text-[10px] bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 px-2.5 py-1 rounded-full">Can I skip it?</button>
+                <button onClick={() => askShortcutChat("I only have 1 hour a day, adjust my pace.")} className="text-[10px] bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 px-2.5 py-1 rounded-full">Adjust my pace</button>
+              </div>
+              <form onSubmit={handleSendChat} className="flex gap-2">
+                <input type="text" placeholder="Ask your GPS companion..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+                <button type="submit" disabled={sendingChat} className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold p-2.5 rounded-lg transition-all" aria-label="Send message"><Send className="w-3.5 h-3.5" /></button>
+              </form>
+            </div>
+          </div>
+        )}
+
       </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-800 bg-slate-950/95 px-2 py-2 backdrop-blur md:hidden" aria-label="Mobile navigation">
+        {primaryNavigation.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => navigateTo(id)} className={`flex flex-col items-center gap-1 py-1 text-[9px] font-bold ${activeView === id ? "text-emerald-400" : "text-slate-500"}`}>
+            <Icon className="h-4 w-4" />{label}
+          </button>
+        ))}
+      </nav>
 
       {/* Quiz Modal Container */}
       {showQuizModal && (
@@ -1406,3 +1478,5 @@ export default function Dashboard() {
     </div>
   );
 }
+
+export default LandingPage;
