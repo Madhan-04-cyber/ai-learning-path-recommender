@@ -13,10 +13,16 @@ from roadmap_service import Roadmap, generate_roadmap, replan_path
 # Initialize FastAPI App
 app = FastAPI(title="PathMind AI - Personalized Learning Path Engine")
 
+def _parse_cors_origins(raw_value: str) -> List[str]:
+    return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+
+
+FRONTEND_URLS = _parse_cors_origins(os.getenv("FRONTEND_URL", ""))
+
 # Configure CORS for Next.js Frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_URLS or ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,6 +30,7 @@ app.add_middleware(
 
 # Configure Gemini Client using the new google-genai SDK
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+PORT = int(os.getenv("PORT", "8000"))
 def get_gemini_client():
     if GEMINI_API_KEY:
         try:
@@ -1290,6 +1297,11 @@ def read_root():
         "framework_alignment": "Learn, Practice, Build, Assess, Verify, Adapt",
         "careers": list(CAREERS.keys())
     }
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
 @app.get("/api/careers")
 def get_careers():
