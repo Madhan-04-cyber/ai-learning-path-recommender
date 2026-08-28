@@ -33,7 +33,7 @@ type SummaryResponse = {
 	nextAction?: string | null;
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const categories = ["Programming", "Backend", "Database", "AI/ML", "Cloud", "DevOps", "Tools"];
 

@@ -34,7 +34,7 @@ type Profile = {
 
 const careerLabel = (targetRole?: string) => targetRole?.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) || "Your career goal";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 export default function HomePage() {
 	const [profile, setProfile] = useState<Profile | null>(null);
