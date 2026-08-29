@@ -10,7 +10,8 @@ async function proxy(request: NextRequest, path: string[]) {
 		);
 	}
 
-	const target = new URL(path.join("/"), backendUrl);
+	const targetPath = `/api/${path.join("/")}`;
+	const target = new URL(targetPath, backendUrl);
 	target.search = request.nextUrl.search;
 
 	const headers = new Headers(request.headers);
