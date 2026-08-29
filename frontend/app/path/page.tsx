@@ -42,7 +42,7 @@ type NodeGroup = {
 	items: RoadmapItem[];
 };
 
-const BACKEND_URL = "";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 const statusLabel: Record<string, string> = {
 	CURRENT: "Current",
@@ -211,13 +211,13 @@ export default function PathPage() {
 					<div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] lg:items-center">
 						{[
 							["START", "The route begins here"],
-							["â†“", ""],
+							["↓", ""],
 							["Completed skills", `${groupedNodes.filter((node) => node.status === "COMPLETED").length} verified`],
-							["â†“", ""],
+							["↓", ""],
 							["Current skill", selectedGroup?.label || "Select a node"],
-							["â†“", ""],
+							["↓", ""],
 							["Future skills", `${groupedNodes.filter((node) => ["AVAILABLE", "LOCKED"].includes(node.status)).length} ahead`],
-							["â†“", ""],
+							["↓", ""],
 							["Career Ready", roadmap.estimatedDuration],
 						].map(([label, detail], index) => (
 							<div key={`${label}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-center">

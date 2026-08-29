@@ -59,7 +59,7 @@ export default function PortfolioPage() {
 					body: JSON.stringify({
 						target_role: targetRole,
 						current_skills: currentSkills,
-						daily_learning_minutes: savedProfile?.practiceHistory?.length ? 60 : 0,
+						daily_learning_minutes: savedProfile?.practiceHistory?.length ? 60 : 60,
 						assessment_results: savedProfile?.assessmentResults || [],
 						practice_history: savedProfile?.practiceHistory || [],
 					}),

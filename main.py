@@ -59,6 +59,11 @@ def build_coach_system_prompt(request: "ChatRequest", career_name: str) -> str:
         context_lines.append(f"Recent mistakes: {json.dumps(request.recent_mistakes[:5])}")
     if request.roadmap:
         context_lines.append(f"Roadmap snapshot: {json.dumps(request.roadmap[:8])}")
+    if request.project_blueprint:
+        context_lines.append(f"Project blueprint: {json.dumps(request.project_blueprint)}")
+        current_step = request.project_blueprint.get("implementationTasks", [None])[0] if isinstance(request.project_blueprint, dict) else None
+        if current_step:
+            context_lines.append(f"Current project step: {current_step}")
     return f"""
 You are PathMind AI Coach.
 You are not a generic chatbot.
@@ -70,10 +75,66 @@ Learner context:
 Rules:
 - Explain recommendations using actual learner data when available.
 - If the user asks to skip a skill, do not mutate the roadmap. Explain why it is or is not safe and request verification.
+- If a project blueprint is available, explain the current build step, setup, validation, and troubleshooting in plain language.
 - If data is unavailable, say so clearly.
 - Be concise, supportive, and specific.
 - Always output markdown.
 """.strip()
+
+
+def build_project_mentor_response(request: "ChatRequest", career_name: str) -> Optional[str]:
+    """Return a deterministic project-guidance response when the learner is asking how to build."""
+    blueprint = request.project_blueprint or {}
+    if not isinstance(blueprint, dict) or not blueprint:
+        return None
+
+    message = request.message.lower()
+    build_keywords = ["build", "how do i", "how to", "implement", "project", "step", "setup", "stuck", "error", "next"]
+    if not any(keyword in message for keyword in build_keywords):
+        return None
+
+    setup = blueprint.get("setup") or []
+    tasks = blueprint.get("implementationTasks") or []
+    checks = blueprint.get("validationChecks") or []
+    troubleshooting = blueprint.get("troubleshooting") or []
+    current_step = tasks[0] if tasks else "Start with the setup step and create the project structure."
+    next_step = tasks[1] if len(tasks) > 1 else "Move to the first implementation task."
+
+    lines = [
+        f"### Project Mentor for {career_name}",
+        "",
+        f"**What you are building:** {blueprint.get('whatYouAreBuilding') or request.current_milestone or 'A skill-linked project'}",
+        "",
+        f"**Current build step:** {current_step}",
+        "",
+        "**Start here:**",
+    ]
+    if setup:
+        lines.extend([f"- {step}" for step in setup[:4]])
+    else:
+        lines.append("- Create the project folder and baseline files.")
+
+    lines.extend([
+        "",
+        f"**Next implementation step:** {next_step}",
+        "",
+        "**Validation checks:**",
+    ])
+    if checks:
+        lines.extend([f"- {check}" for check in checks])
+    else:
+        lines.append("- Confirm the project runs and the expected output appears.")
+
+    lines.extend([
+        "",
+        "**Common troubleshooting:**",
+    ])
+    if troubleshooting:
+        lines.extend([f"- {item}" for item in troubleshooting[:3]])
+    else:
+        lines.append("- If you are stuck, reduce the problem to the smallest working step.")
+
+    return "\n".join(lines)
 
 # --- Career Database ---
 CAREERS = {
@@ -989,37 +1050,112 @@ def isCareerReady(required_skills: List[str], user_skills: Dict[str, Any], skill
 def select_adaptive_project(skill_id: str, proficiency: int, skill_graph: Dict[str, Any]) -> Dict[str, Any]:
     """Return a milestone project tailored to the learner level."""
     skill_title = skill_graph.get(skill_id, {}).get("title", skill_id)
+    skill_meta = skill_graph.get(skill_id, {})
+    prerequisites = skill_meta.get("prerequisites", [])
+    competency_focus = [skill_title] + [skill_graph.get(prereq, {}).get("title", prereq) for prereq in prerequisites[:2]]
+    setup_steps = [
+        "Create the project folder and basic file structure.",
+        "Install the required runtime and dependencies.",
+        "Load or define a small sample dataset or request payload.",
+        "Run the first verification command to confirm the environment works.",
+    ]
     if proficiency < 45:
         return {
             "title": f"{skill_title} REST API",
-            "goal": "Build a simple working service with a single dependency chain.",
+            "goal": "Build a simple service while practicing the core competency behind this skill.",
             "skills": [skill_id],
             "prerequisites": [],
             "difficulty": "Beginner",
             "estimatedTime": "4-6 hours",
             "expectedOutput": "A small REST endpoint with validation and a basic response model.",
             "evaluationCriteria": ["Returns correct responses", "Uses validation", "Follows route structure"],
+            "competencyFocus": competency_focus,
+            "projectBlueprint": {
+                "whatYouAreBuilding": f"A beginner-friendly {skill_title} project that teaches the core skill through a small working application.",
+                "requirements": [skill_title],
+                "techStack": ["The skill itself", "A lightweight test runner or REPL"],
+                "architecture": ["Input", "Core logic", "Output", "Validation"],
+                "setup": setup_steps,
+                "implementationTasks": [
+                    "Create the minimal project skeleton.",
+                    "Implement one end-to-end example.",
+                    "Add input validation and error handling.",
+                    "Run the checks and fix any failing case.",
+                ],
+                "validationChecks": ["Project starts", "Core example runs", "Validation errors are handled"],
+                "commonMistakes": ["Skipping validation", "Trying to build too much at once", "Not checking outputs early"],
+                "troubleshooting": ["If the setup fails, confirm paths and dependencies.", "If the result is wrong, reduce the example to a smaller case."],
+            },
+            "milestones": [
+                {"title": "Plan the scope", "teaches": [skill_title], "assesses": ["Requirements clarity"]},
+                {"title": "Implement the core flow", "teaches": [skill_title], "assesses": ["Basic implementation"]},
+                {"title": "Verify with checks", "teaches": [skill_title], "assesses": ["Validation and correctness"]},
+            ],
         }
     if proficiency < 75:
         return {
             "title": f"{skill_title} ML Prediction API",
-            "goal": "Ship an API that wraps a model or analytics workflow with a reliable interface.",
+            "goal": "Ship a working environment that connects the target skill with prerequisite competencies.",
             "skills": [skill_id, "rest_apis"],
             "prerequisites": ["rest_apis"],
             "difficulty": "Intermediate",
             "estimatedTime": "6-10 hours",
             "expectedOutput": "A documented API with clear request and response contracts.",
             "evaluationCriteria": ["Reusable API design", "Validates input", "Produces useful output"],
+            "competencyFocus": competency_focus + ["REST API Design"],
+            "projectBlueprint": {
+                "whatYouAreBuilding": f"A structured {skill_title} project that reinforces prerequisite skills while teaching implementation order.",
+                "requirements": [skill_title, "REST API Design"],
+                "techStack": ["REST API", "Documentation", "Unit checks"],
+                "architecture": ["Contract", "Implementation", "Tests", "Review"],
+                "setup": setup_steps,
+                "implementationTasks": [
+                    "Define the input and output contract.",
+                    "Implement the project in small milestones.",
+                    "Connect the prerequisite skill to the target skill.",
+                    "Validate the workflow and record evidence.",
+                ],
+                "validationChecks": ["Contract is clear", "Implementation matches the contract", "Tests pass"],
+                "commonMistakes": ["Ignoring prerequisites", "Skipping the contract", "Not testing the workflow"],
+                "troubleshooting": ["If something breaks, check the contract first.", "If the route is unavailable, revisit prerequisites."],
+            },
+            "milestones": [
+                {"title": "Review prerequisite skill", "teaches": [skill_graph.get("rest_apis", {}).get("title", "REST API Design")], "assesses": ["Prerequisite alignment"]},
+                {"title": "Build the API contract", "teaches": [skill_title, "REST API Design"], "assesses": ["Request / response shape"]},
+                {"title": "Test the workflow", "teaches": [skill_title], "assesses": ["Correctness under test"]},
+            ],
         }
     return {
         "title": f"{skill_title} RAG-powered AI Backend",
-        "goal": "Build a production-style backend with retrieval, orchestration, and evidence capture.",
+        "goal": "Build a production-style environment where the final project is a sequence of checked learning milestones.",
         "skills": [skill_id, "fastapi", "postgresql", "ai_apis", "rag"],
         "prerequisites": ["fastapi", "postgresql"],
         "difficulty": "Advanced",
         "estimatedTime": "10-18 hours",
         "expectedOutput": "A backend that can retrieve context, answer queries, and store evidence.",
         "evaluationCriteria": ["Handles retrieval flow", "Stores evidence", "Supports review and reassessment"],
+        "competencyFocus": competency_focus + [skill_graph.get("fastapi", {}).get("title", "FastAPI"), skill_graph.get("postgresql", {}).get("title", "PostgreSQL")],
+        "projectBlueprint": {
+            "whatYouAreBuilding": f"A guided {skill_title} project environment with a clear build order and verification path.",
+            "requirements": [skill_title, "FastAPI", "PostgreSQL"],
+            "techStack": ["FastAPI", "PostgreSQL", "AI API", "Test client"],
+            "architecture": ["Project scaffold", "Data layer", "API layer", "Verification layer"],
+            "setup": setup_steps,
+            "implementationTasks": [
+                "Create the directory structure and install dependencies.",
+                "Build the API and storage components.",
+                "Wire the retrieval or orchestration flow.",
+                "Run the evaluation and record evidence.",
+            ],
+            "validationChecks": ["API responds", "Storage works", "Evidence is recorded"],
+            "commonMistakes": ["Coupling all steps together too early", "Skipping data validation", "Treating the project like a static assignment"],
+            "troubleshooting": ["If responses fail, verify the API contract.", "If storage fails, isolate the database step.", "If evidence is missing, review the milestone output."],
+        },
+        "milestones": [
+            {"title": "Design the architecture", "teaches": ["FastAPI", "PostgreSQL"], "assesses": ["System design", "Dependency awareness"]},
+            {"title": "Implement retrieval and storage", "teaches": [skill_title, "FastAPI", "PostgreSQL"], "assesses": ["Data flow", "Persistence"]},
+            {"title": "Verify with evidence", "teaches": [skill_title], "assesses": ["Evaluation", "Evidence quality"]},
+        ],
     }
 
 
@@ -1045,7 +1181,7 @@ def build_contextual_resources(skill_id: str, skill_graph: Dict[str, Any], profi
         "skill": skill_id,
         "difficulty": project["difficulty"],
         "estimatedTime": project["estimatedTime"],
-        "reason": f"This project is recommended because it matches your current proficiency and roadmap stage.",
+        "reason": f"This project is recommended because it is a structured learning environment for {skill_graph.get(skill_id, {}).get('title', skill_id)} and its prerequisites.",
         "url": None,
         "contentReference": project,
     })
@@ -1158,11 +1294,17 @@ class GoalAnalysis(BaseModel):
     estimatedDuration: str
     readiness: int = Field(ge=0, le=100)
     matched_career_id: Optional[str] = None
+    support_level: str = "supported"
+    domain: str = ""
+    specialization: str = ""
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    reason: str = ""
     is_ambiguous: bool = False
     clarification_question: str = ""
     normalized_name: str = ""
     extracted_skills: List[str] = Field(default_factory=list)
     target_outcome: str = ""
+    related_supported_roles: List[str] = Field(default_factory=list)
 
 class SkillAnalysisRequest(BaseModel):
     target_role: str
@@ -1204,7 +1346,50 @@ class ProjectCompletionRequest(BaseModel):
     user_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     evidence_summary: str = ""
 
-def build_goal_analysis(goal: str, career_id: str) -> GoalAnalysis:
+CAREER_CLASSIFICATION_HINTS = {
+    "backend_ai_developer": {
+        "domain": "technology",
+        "specialization": "backend ai development",
+        "support_level": "supported",
+        "related_supported_roles": ["ai_engineer", "full_stack_developer"],
+    },
+    "ai_engineer": {
+        "domain": "technology",
+        "specialization": "artificial intelligence engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["backend_ai_developer", "ml_engineer", "data_scientist"],
+    },
+    "ml_engineer": {
+        "domain": "technology",
+        "specialization": "machine learning engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["ai_engineer", "data_scientist"],
+    },
+    "data_scientist": {
+        "domain": "technology",
+        "specialization": "data science and analytics",
+        "support_level": "supported",
+        "related_supported_roles": ["ml_engineer", "backend_ai_developer"],
+    },
+    "full_stack_developer": {
+        "domain": "technology",
+        "specialization": "full stack web development",
+        "support_level": "supported",
+        "related_supported_roles": ["backend_ai_developer"],
+    },
+}
+
+def build_goal_analysis(
+    goal: str,
+    career_id: str,
+    *,
+    support_level: str = "supported",
+    confidence: float = 1.0,
+    reason: str = "",
+    is_ambiguous: bool = False,
+    clarification_question: str = "",
+    related_supported_roles: Optional[List[str]] = None,
+) -> GoalAnalysis:
     career = CAREERS[career_id]
     required_skills = list(career.get("required_skills", []))
     skill_count = len(required_skills)
@@ -1220,6 +1405,183 @@ def build_goal_analysis(goal: str, career_id: str) -> GoalAnalysis:
         normalized_name=career["name"],
         extracted_skills=[],
         target_outcome=f"Build and grow toward a career as a {career['name']}.",
+    )
+
+
+def build_goal_analysis(
+    goal: str,
+    career_id: str,
+    *,
+    support_level: str = "supported",
+    confidence: float = 1.0,
+    reason: str = "",
+    is_ambiguous: bool = False,
+    clarification_question: str = "",
+    related_supported_roles: Optional[List[str]] = None,
+) -> GoalAnalysis:
+    career = CAREERS[career_id]
+    required_skills = list(career.get("required_skills", []))
+    skill_count = len(required_skills)
+    duration = "3-5 months" if skill_count <= 12 else "6-9 months" if skill_count <= 18 else "9-12 months"
+    hints = CAREER_CLASSIFICATION_HINTS.get(career_id, {})
+    return GoalAnalysis(
+        goal=goal,
+        careerTitle=career["name"],
+        description=career["description"],
+        requiredSkills=required_skills,
+        estimatedDuration=duration,
+        readiness=0,
+        matched_career_id=career_id,
+        support_level=support_level,
+        domain=hints.get("domain", "technology"),
+        specialization=hints.get("specialization", career["name"].lower()),
+        confidence=confidence,
+        reason=reason or f"Matched to {career['name']} using the internal career blueprint.",
+        is_ambiguous=is_ambiguous,
+        clarification_question=clarification_question,
+        normalized_name=career["name"],
+        extracted_skills=[],
+        target_outcome=f"Build and grow toward a career as a {career['name']}.",
+        related_supported_roles=related_supported_roles or list(hints.get("related_supported_roles", [])),
+    )
+
+
+def classify_goal(query: str) -> GoalAnalysis:
+    q = query.strip().lower()
+    matched_career = None
+    support_level = "supported"
+    reason = ""
+    confidence = 0.0
+    clarification_question = ""
+    is_ambiguous = False
+    related_supported_roles: List[str] = []
+    extracted_skills: List[str] = []
+
+    keyword_rules = [
+        ("backend_ai_developer", ["backend ai", "ai backend", "python ai", "backend developer"]),
+        ("ai_engineer", ["ai engineer", "prompt engineering", "prompt engineer", "prompting", "llm"]),
+        ("ml_engineer", ["machine learning", "ml engineer", "predictive"]),
+        ("data_scientist", ["data scientist", "data analyst", "analytics", "data analytics", "business intelligence", "statistics"]),
+        ("full_stack_developer", ["full stack", "web dev", "frontend", "next.js"]),
+    ]
+
+    for career_id, keywords in keyword_rules:
+        if any(keyword in q for keyword in keywords):
+            matched_career = career_id
+            confidence = 0.95
+            reason = f"Matched by deterministic keyword rules for {CAREERS[career_id]['name']}."
+            break
+
+    if matched_career == "ai_engineer" and any(token in q for token in ["medical", "healthcare", "hospital", "clinical"]):
+        support_level = "partial"
+        confidence = max(confidence, 0.88)
+        reason = "The goal combines healthcare and AI. PathMind can support the technology side, not clinical medicine."
+        extracted_skills = ["Prompt Engineering", "LLMs", "RAG"]
+        related_supported_roles = ["ai_engineer", "data_scientist", "backend_ai_developer"]
+    elif matched_career == "backend_ai_developer":
+        extracted_skills = ["Python", "FastAPI", "SQL", "AI APIs"]
+    elif matched_career == "ml_engineer":
+        extracted_skills = ["Python", "NumPy", "Pandas", "Machine Learning"]
+    elif matched_career == "data_scientist":
+        extracted_skills = ["SQL", "Statistics", "Pandas", "Visualization"]
+    elif matched_career == "full_stack_developer":
+        extracted_skills = ["React", "Next.js", "REST APIs", "SQL"]
+
+    if not matched_career and any(token in q for token in ["doctor", "medicine", "surgeon", "nurse", "clinical"]):
+        return GoalAnalysis(
+            goal=query.strip(),
+            careerTitle="",
+            description="Medicine is outside PathMind's current supported learning domain.",
+            requiredSkills=[],
+            estimatedDuration="",
+            readiness=0,
+            matched_career_id=None,
+            support_level="outside_scope",
+            domain="healthcare",
+            specialization="clinical medicine",
+            confidence=0.92,
+            reason="Clinical medicine is outside PathMind's current supported technology learning scope.",
+            is_ambiguous=False,
+            clarification_question="",
+            normalized_name="",
+            extracted_skills=[],
+            target_outcome="PathMind focuses on technology, AI, software, data, and related digital careers.",
+            related_supported_roles=["data_scientist", "ai_engineer", "backend_ai_developer"],
+        )
+
+    client = get_gemini_client()
+    if client and not matched_career:
+        try:
+            prompt = f"""
+Analyze this learning goal query: "{query}"
+Classify it into one supported career blueprint if possible.
+Return JSON with keys:
+- matched_career_id
+- support_level
+- is_ambiguous
+- clarification_question
+- normalized_name
+- extracted_skills
+- target_outcome
+- reason
+- related_supported_roles
+"""
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            data = json.loads(response.text or "{}")
+            ai_career_id = data.get("matched_career_id")
+            if ai_career_id in CAREERS and not data.get("is_ambiguous", False):
+                result = build_goal_analysis(
+                    query.strip(),
+                    ai_career_id,
+                    support_level=str(data.get("support_level") or "supported"),
+                    confidence=float(data.get("confidence") or 0.7),
+                    reason=str(data.get("reason") or ""),
+                    is_ambiguous=bool(data.get("is_ambiguous", False)),
+                    clarification_question=str(data.get("clarification_question") or ""),
+                    related_supported_roles=[role for role in data.get("related_supported_roles", []) if role in CAREERS],
+                )
+                result.extracted_skills = [str(item) for item in data.get("extracted_skills", []) if str(item).strip()]
+                return result
+        except Exception:
+            pass
+
+    if matched_career:
+        result = build_goal_analysis(
+            query.strip(),
+            matched_career,
+            support_level=support_level,
+            confidence=confidence,
+            reason=reason,
+            is_ambiguous=is_ambiguous,
+            clarification_question=clarification_question,
+            related_supported_roles=related_supported_roles,
+        )
+        result.extracted_skills = extracted_skills
+        return result
+
+    return GoalAnalysis(
+        goal=query.strip(),
+        careerTitle="",
+        description="",
+        requiredSkills=[],
+        estimatedDuration="",
+        readiness=0,
+        matched_career_id=None,
+        support_level="partial" if "health" in q or "hospital" in q else "outside_scope",
+        domain="technology",
+        specialization="",
+        confidence=0.35,
+        reason="The goal could not be confidently mapped to a supported blueprint.",
+        is_ambiguous=True,
+        clarification_question="Tell me which technology career path you want to pursue.",
+        normalized_name="",
+        extracted_skills=[],
+        target_outcome="",
+        related_supported_roles=["backend_ai_developer", "ai_engineer", "data_scientist", "ml_engineer", "full_stack_developer"],
     )
 
 class PathGenerationRequest(BaseModel):
@@ -1286,6 +1648,7 @@ class ChatRequest(BaseModel):
     learning_preference: Optional[str] = None
     bottleneck: Optional[str] = None
     next_action: Optional[str] = None
+    project_blueprint: Optional[Dict[str, Any]] = None
 
 # --- API Route Endpoints ---
 
@@ -1499,77 +1862,10 @@ def complete_project(request: ProjectCompletionRequest):
 @app.post("/api/analyze-goal", response_model=GoalAnalysis)
 def analyze_goal(request: GoalAnalysisRequest):
     """Parses natural language goal to map to a structured career template or asks a clarification question."""
-    q = request.query.strip().lower()
-    
-    # Try keywords match
-    matched_career = None
-    if "backend ai" in q or "ai backend" in q or "python ai" in q or "backend developer" in q:
-        matched_career = "backend_ai_developer"
-    elif "ai engineer" in q or "prompt" in q or "llm" in q:
-        matched_career = "ai_engineer"
-    elif "machine learning" in q or "ml engineer" in q or "predictive" in q:
-        matched_career = "ml_engineer"
-    elif "data scientist" in q or "analytics" in q or "statistics" in q:
-        matched_career = "data_scientist"
-    elif "full stack" in q or "web dev" in q or "frontend" in q or "next.js" in q:
-        matched_career = "full_stack_developer"
-        
-    client = get_gemini_client()
-    if client and not matched_career:
-        try:
-            prompt = f"""
-            Analyze this learning goal query: "{request.query}"
-            Classify it into exactly one of these career IDs:
-            1. "backend_ai_developer" (Python backend, FastAPI, SQL, ML basics, Docker, Cloud, AI integration)
-            2. "ai_engineer" (NLP, LLMs, Vector Databases, PEFT fine-tuning, RAG, prompt engineering)
-            3. "ml_engineer" (ML fundamentals, deep learning, MLOps, serving models, computer vision)
-            4. "data_scientist" (Math, statistics, dataframes Pandas, SQL, ML models, dashboards)
-            5. "full_stack_developer" (React, Nextjs, SQL, Express/Node, CSS Tailwind, Git)
-
-            If the goal is ambiguous, set is_ambiguous to true and write a short clarification question to ask the user.
-            Provide output in JSON format matching this schema:
-            {{
-                "matched_career_id": "career_id_or_null",
-                "is_ambiguous": true/false,
-                "clarification_question": "question text if ambiguous else empty",
-                "normalized_name": "Display name of matched career",
-                "extracted_skills": ["extracted", "skills"],
-                "target_outcome": "what user wants to build"
-            }}
-            """
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            data = json.loads(response.text)
-            ai_career_id = data.get("matched_career_id")
-            if ai_career_id in CAREERS and not data.get("is_ambiguous", False):
-                result = build_goal_analysis(request.query.strip(), ai_career_id)
-                result.extracted_skills = data.get("extracted_skills", [])
-                return result
-        except Exception:
-            pass # Fallback to static matching below
-
-    # Static fallback
-    if matched_career:
-        result = build_goal_analysis(request.query.strip(), matched_career)
-        result.extracted_skills = ["Python", "SQL"] if matched_career == "backend_ai_developer" else []
-        result.target_outcome = f"Work as a professional {CAREERS[matched_career]['name']}"
-        return result
-    else:
-        return GoalAnalysis(
-            goal=request.query.strip(),
-            careerTitle="",
-            description="",
-            requiredSkills=[],
-            estimatedDuration="",
-            readiness=0,
-            is_ambiguous=True,
-            clarification_question="I could not match that goal to a supported career track yet. Try a software, AI, data, or full-stack goal.",
-        )
+    result = classify_goal(request.query)
+    if result.is_ambiguous and not result.clarification_question:
+        result.clarification_question = "I could not match that goal to a supported career track yet. Try a software, AI, data, or full-stack goal."
+    return result
 
 @app.post("/api/generate-path")
 def generate_path(request: PathGenerationRequest):
@@ -2018,6 +2314,9 @@ def chat_assistant(request: ChatRequest):
     active_skills = [k for k, v in request.user_skills.items() if v.get("status") in ["Completed", "Verified"]]
     weak_skills = [k for k, v in request.user_skills.items() if v.get("status") == "Needs Improvement"]
     system_prompt = build_coach_system_prompt(request, career_name)
+    mentor_response = build_project_mentor_response(request, career_name)
+    if mentor_response and ("how" in request.message.lower() or "build" in request.message.lower() or "step" in request.message.lower() or "project" in request.message.lower() or "stuck" in request.message.lower()):
+        return {"response": mentor_response}
     
     if client:
         try:

@@ -1,6 +1,8 @@
 import unittest
 
 from main import (
+    GoalAnalysisRequest,
+    analyze_goal,
     PathGenerationRequest,
     calculateCareerReadiness,
     isCareerReady,
@@ -86,6 +88,24 @@ class LearningEngineTests(unittest.TestCase):
         )
         self.assertFalse(incomplete["ready"])
         self.assertTrue(complete["ready"])
+
+    def test_goal_analysis_classifies_data_analyst_as_supported(self):
+        result = analyze_goal(GoalAnalysisRequest(query="I want to become a data analyst"))
+        self.assertEqual(result.matched_career_id, "data_scientist")
+        self.assertEqual(result.support_level, "supported")
+        self.assertFalse(result.is_ambiguous)
+        self.assertIn("Data Scientist", result.careerTitle)
+
+    def test_goal_analysis_marks_doctor_out_of_scope(self):
+        result = analyze_goal(GoalAnalysisRequest(query="I want to become a doctor"))
+        self.assertEqual(result.support_level, "outside_scope")
+        self.assertFalse(result.is_ambiguous)
+        self.assertEqual(result.matched_career_id, None)
+
+    def test_goal_analysis_marks_medical_ai_engineer_partial(self):
+        result = analyze_goal(GoalAnalysisRequest(query="I want to become a medical AI engineer"))
+        self.assertEqual(result.support_level, "partial")
+        self.assertEqual(result.matched_career_id, "ai_engineer")
 
 
 if __name__ == "__main__":

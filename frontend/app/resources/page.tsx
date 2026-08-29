@@ -29,6 +29,19 @@ type ProjectItem = {
 	estimatedTime: string;
 	expectedOutput: string;
 	evaluationCriteria: string[];
+	competencyFocus?: string[];
+	milestones?: Array<{ title: string; teaches: string[]; assesses: string[] }>;
+	projectBlueprint?: {
+		whatYouAreBuilding: string;
+		requirements: string[];
+		techStack: string[];
+		architecture: string[];
+		setup: string[];
+		implementationTasks: string[];
+		validationChecks: string[];
+		commonMistakes: string[];
+		troubleshooting: string[];
+	};
 };
 
 type SkillBucket = {
@@ -47,7 +60,7 @@ type ResourcesResponse = {
 	projects: SkillBucket[];
 };
 
-const BACKEND_URL = "";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 function titleize(value?: string | null) {
 	return value ? value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Unavailable";
@@ -212,28 +225,29 @@ export default function ResourcesPage() {
 									return (
 										<button key={bucket.skillId} onClick={() => setSelectedProject(bucket)} className={`w-full rounded-xl border p-4 text-left ${selectedProject?.skillId === bucket.skillId ? "border-emerald-400 bg-emerald-400/10" : "border-slate-800 bg-slate-950/60"}`}>
 											<div className="flex items-center justify-between gap-3">
-												<div className="min-w-0">
-													<p className="break-words text-sm font-bold leading-tight text-white">{bucket.project.title}</p>
-													<p className="mt-1 text-[10px] uppercase tracking-wide text-slate-500">{bucket.title}</p>
-												</div>
-												<div className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${stage === "locked" ? "border-slate-700 text-slate-400" : stage === "completed" ? "border-emerald-400 bg-emerald-400 text-slate-950" : "border-indigo-400 bg-indigo-400 text-white"}`}>
-													{stage}
-												</div>
-											</div>
-											<p className="mt-3 text-sm text-slate-300">{bucket.project.goal}</p>
-											<p className="mt-2 text-xs text-slate-500">Difficulty: {bucket.project.difficulty} · {bucket.project.estimatedTime}</p>
-										</button>
-									);
-								})}
-							</div>
+										<div className="min-w-0">
+											<p className="break-words text-sm font-bold leading-tight text-white">{bucket.project.title}</p>
+											<p className="mt-1 text-[10px] uppercase tracking-wide text-slate-500">{bucket.title}</p>
+										</div>
+										<div className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${stage === "locked" ? "border-slate-700 text-slate-400" : stage === "completed" ? "border-emerald-400 bg-emerald-400 text-slate-950" : "border-indigo-400 bg-indigo-400 text-white"}`}>
+											{stage}
+										</div>
+									</div>
+									<p className="mt-3 text-sm text-slate-300">{bucket.project.goal}</p>
+									<p className="mt-2 text-xs text-slate-500">Difficulty: {bucket.project.difficulty} · {bucket.project.estimatedTime}</p>
+									{bucket.project.competencyFocus?.length ? <p className="mt-2 text-xs text-emerald-300">Competencies: {bucket.project.competencyFocus.join(" · ")}</p> : null}
+								</button>
+							);
+						})}
+					</div>
 						</div>
 
 						<div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
 							<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400"><Layers3 className="h-3.5 w-3.5" /> Project detail</div>
 							{selectedProject ? (
 								<div className="mt-4 space-y-4">
-									<h3 className="text-2xl font-black text-white">{selectedProject.project.title}</h3>
-									<p className="text-sm text-slate-400">{selectedProject.project.goal}</p>
+									<h3 className="break-words text-2xl font-black leading-tight text-white">{selectedProject.project.title}</h3>
+									<p className="break-words text-sm text-slate-400">{selectedProject.project.goal}</p>
 									<div className="grid gap-3 sm:grid-cols-2">
 										<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
 											<p className="text-[10px] uppercase text-slate-500">Skills</p>
@@ -242,6 +256,32 @@ export default function ResourcesPage() {
 										<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
 											<p className="text-[10px] uppercase text-slate-500">Prerequisites</p>
 											<p className="mt-1 text-sm text-slate-300">{selectedProject.project.prerequisites.length ? selectedProject.project.prerequisites.map(titleize).join(", ") : "None"}</p>
+										</div>
+									</div>
+									<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+										<p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Project build guide</p>
+										<p className="mt-2 text-sm leading-relaxed text-slate-300">
+											{selectedProject.project.projectBlueprint?.whatYouAreBuilding || "This project is structured as a guided learning environment built from the skill graph."}
+										</p>
+										<div className="mt-4 grid gap-3 sm:grid-cols-2">
+											<div>
+												<p className="text-[10px] uppercase text-slate-500">Requirements</p>
+												<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.requirements.join(" · ") || "Derived from the skill graph"}</p>
+											</div>
+											<div>
+												<p className="text-[10px] uppercase text-slate-500">Tech stack</p>
+												<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.techStack.join(" · ") || "Selected from the project blueprint"}</p>
+											</div>
+										</div>
+										<div className="mt-4 grid gap-3 sm:grid-cols-2">
+											<div>
+												<p className="text-[10px] uppercase text-slate-500">Architecture</p>
+												<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.architecture.join(" · ") || "Stepwise project structure"}</p>
+											</div>
+											<div>
+												<p className="text-[10px] uppercase text-slate-500">Validation checks</p>
+												<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.validationChecks.join(" · ") || "Milestone checks and verification"}</p>
+											</div>
 										</div>
 									</div>
 									<div className="grid gap-3 sm:grid-cols-2">
@@ -255,8 +295,30 @@ export default function ResourcesPage() {
 										</div>
 									</div>
 									<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+										<p className="text-[10px] uppercase text-slate-500">Learning milestones</p>
+										<div className="mt-3 space-y-3">
+											{selectedProject.project.milestones?.length ? selectedProject.project.milestones.map((milestone, index) => (
+												<div key={`${milestone.title}-${index}`} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+													<p className="text-sm font-bold text-white">{index + 1}. {milestone.title}</p>
+													<p className="mt-1 text-xs text-slate-400">Teaches: {milestone.teaches.join(" · ")}</p>
+													<p className="mt-1 text-xs text-slate-500">Assesses: {milestone.assesses.join(" · ")}</p>
+												</div>
+											)) : <p className="text-sm text-slate-500">Milestones are generated from the skill graph for this project.</p>}
+										</div>
+									</div>
+									<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
 										<p className="text-[10px] uppercase text-slate-500">Completion evidence</p>
-										<p className="mt-1 text-sm text-slate-300">Project completion will only create evidence after evaluation through the completion endpoint.</p>
+										<p className="mt-1 text-sm text-slate-300">Project completion creates skill evidence only after the milestones and evaluation criteria are satisfied.</p>
+									</div>
+									<div className="grid gap-3 sm:grid-cols-2">
+										<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+											<p className="text-[10px] uppercase text-slate-500">Common mistakes</p>
+											<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.commonMistakes.join(" · ") || "Avoid skipping steps and validation."}</p>
+										</div>
+										<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+											<p className="text-[10px] uppercase text-slate-500">Troubleshooting</p>
+											<p className="mt-1 text-sm text-slate-300">{selectedProject.project.projectBlueprint?.troubleshooting.join(" · ") || "Use the milestone checks to locate the issue."}</p>
+										</div>
 									</div>
 									<div className="grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
 										<label className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
