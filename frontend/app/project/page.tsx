@@ -155,13 +155,11 @@ function normalizeMilestoneState(
 
 export default function ProjectPage() {
 	const [profile, setProfile] = useState<Profile | null>(null);
-	const [summary, setSummary] = useState<ResourcesResponse | null>(null);
 	const [session, setSession] = useState<ProjectSessionResponse | null>(null);
 	const [projectState, setProjectState] = useState<ProjectState>({});
 	const [selectedSkillId, setSelectedSkillId] = useState("");
 	const [selectedMilestoneId, setSelectedMilestoneId] = useState("");
 	const [loading, setLoading] = useState(true);
-	const [sessionLoading, setSessionLoading] = useState(false);
 	const [completing, setCompleting] = useState(false);
 	const [aiLoading, setAiLoading] = useState(false);
 	const [error, setError] = useState("");
@@ -174,7 +172,7 @@ export default function ProjectPage() {
 	const [implementationNotes, setImplementationNotes] = useState("");
 	const [implementationResult, setImplementationResult] = useState("");
 	const [codeSnippet, setCodeSnippet] = useState("");
-	const [score, setScore] = useState(80);
+	const [score] = useState(80);
 
 	const persistProjectState = (next: ProjectState) => {
 		setProjectState(next);
@@ -217,7 +215,6 @@ export default function ProjectPage() {
 	};
 
 	const startProject = async (targetRole: string, skillId: string, proficiency: number, interest = "", learnerSkills: Profile["user_skills"] = profile?.user_skills || {}, state: ProjectState = projectState) => {
-		setSessionLoading(true);
 		setError("");
 		try {
 			const response = await fetch(`${BACKEND_URL}/api/project/start`, {
@@ -231,7 +228,6 @@ export default function ProjectPage() {
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Project workspace unavailable.");
 		} finally {
-			setSessionLoading(false);
 		}
 	};
 
@@ -255,7 +251,6 @@ export default function ProjectPage() {
 			});
 			if (!resourcesResponse.ok) throw new Error("No active project yet.");
 			const resourcesData = (await resourcesResponse.json()) as ResourcesResponse;
-			setSummary(resourcesData);
 			const chosenProject = chooseProject(resourcesData.projects, savedProfile?.interest || "");
 			if (chosenProject) {
 				setSelectedSkillId(chosenProject.skillId);
@@ -289,8 +284,6 @@ export default function ProjectPage() {
 	const currentSkillProfile = currentSkillId ? profile?.user_skills?.[currentSkillId] : undefined;
 	const nextBestAction = activeMilestone?.status === "AVAILABLE" ? `Start ${activeMilestone.title}` : session?.project.projectBlueprint?.implementationTasks?.[0] || session?.project.title || "Continue your project";
 	const hintsForMilestone = activeMilestone?.hints || [];
-	const steps = activeMilestone?.implementation_steps || [];
-	const isHintVisible = !!activeMilestone && showHints;
 
 	const startMilestone = (milestoneId: string) => {
 		setSelectedMilestoneId(milestoneId);

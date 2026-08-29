@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from main import (
     ChatRequest,
@@ -105,6 +106,79 @@ class LearningEngineTests(unittest.TestCase):
         self.assertEqual(result.support_level, "supported")
         self.assertFalse(result.is_ambiguous)
         self.assertIn("Data Scientist", result.careerTitle)
+        self.assertEqual(result.goal, "I want to become a data analyst")
+
+    def test_coach_greeting_is_deterministic(self):
+        request = ChatRequest(
+            message="hi",
+            history=[],
+            target_role="data_scientist",
+            user_skills={},
+            project_blueprint={"whatYouAreBuilding": "Internal Blueprint"},
+        )
+        with patch("main.get_gemini_client") as get_client:
+            response = chat_assistant(request)
+        get_client.assert_not_called()
+        self.assertIn("Hi! I'm your PathMind learning coach.", response["response"])
+        self.assertNotIn("Internal Blueprint", response["response"])
+
+    def test_coach_fallback_when_gemini_unavailable_does_not_leak_context(self):
+        request = ChatRequest(
+            message="what should I learn next?",
+            history=[],
+            target_role="data_scientist",
+            user_skills={},
+            current_skill="numpy_pandas",
+            current_milestone="Internal Milestone",
+            next_action="Practice arrays",
+            project_blueprint={"whatYouAreBuilding": "Internal Blueprint", "implementationTasks": ["SECRET STEP"]},
+        )
+        with patch("main.get_gemini_client", return_value=None):
+            response = chat_assistant(request)
+        self.assertIn("Your next focus is Practice arrays", response["response"])
+        self.assertNotIn("Internal Blueprint", response["response"])
+        self.assertNotIn("SECRET STEP", response["response"])
+        self.assertNotIn("trouble reaching", response["response"].lower())
+
+    def test_coach_malformed_gemini_response_uses_safe_fallback(self):
+        class EmptyResponse:
+            text = ""
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                return EmptyResponse()
+
+        class FakeClient:
+            models = FakeModels()
+
+        request = ChatRequest(
+            message="explain this",
+            history=[],
+            target_role="data_scientist",
+            user_skills={},
+            current_skill="numpy_pandas",
+            project_blueprint={"whatYouAreBuilding": "Internal Blueprint"},
+        )
+        with patch("main.get_gemini_client", return_value=FakeClient()):
+            response = chat_assistant(request)
+        self.assertIn("I can explain numpy_pandas step by step", response["response"])
+        self.assertNotIn("Internal Blueprint", response["response"])
+
+    def test_project_mentor_context_is_not_used_by_unavailable_fallback(self):
+        request = ChatRequest(
+            message="I am stuck and getting an error.",
+            history=[],
+            target_role="cloud_engineer",
+            user_skills={},
+            current_skill="docker",
+            current_milestone="Infrastructure Setup",
+            project_blueprint={"whatYouAreBuilding": "Cloud Deployment Sandbox", "implementationTasks": ["Set up Docker"]},
+        )
+        with patch("main.get_gemini_client", return_value=None):
+            response = chat_assistant(request)
+        self.assertNotIn("Cloud Deployment Sandbox", response["response"])
+        self.assertNotIn("Set up Docker", response["response"])
+        self.assertNotIn("current context", response["response"].lower())
 
     def test_goal_analysis_marks_doctor_out_of_scope(self):
         result = analyze_goal(GoalAnalysisRequest(query="I want to become a doctor"))
@@ -194,10 +268,10 @@ class LearningEngineTests(unittest.TestCase):
             project_title="Cloud Deployment Sandbox",
             project_blueprint={"whatYouAreBuilding": "Cloud Deployment Sandbox", "implementationTasks": ["Set up Docker"]},
         )
-        mentor_response = chat_assistant(fallback_request)
-        self.assertIn("Cloud Engineer", mentor_response["response"])
-        self.assertIn("Cloud Deployment Sandbox", mentor_response["response"])
-        self.assertIn("Set up Docker", mentor_response["response"])
+        with patch("main.get_gemini_client", return_value=None):
+            mentor_response = chat_assistant(fallback_request)
+        self.assertNotIn("Cloud Deployment Sandbox", mentor_response["response"])
+        self.assertNotIn("Set up Docker", mentor_response["response"])
 
         generic_request = ChatRequest(
             message="Why am I learning this?",
@@ -206,8 +280,7 @@ class LearningEngineTests(unittest.TestCase):
             user_skills={},
         )
         generic_response = chat_assistant(generic_request)
-        self.assertIn("AI Learning Coach", generic_response["response"])
-        self.assertIn("AI Engineer", generic_response["response"])
+        self.assertIn("learning path", generic_response["response"])
 
     def test_assessment_loads_correct_learner_goal(self):
         result = start_diagnostic(DiagnosticStartRequest(target_role="data_scientist"))
@@ -220,6 +293,72 @@ class LearningEngineTests(unittest.TestCase):
         skill_ids = {question.skillId for question in data["questions"]}
         self.assertIn("containers", skill_ids)
         self.assertIn("cloud_fundamentals", skill_ids)
+
+    def test_cloud_assessment_questions_have_valid_unique_ids(self):
+        data = start_diagnostic(DiagnosticStartRequest(target_role="cloud_engineer"))
+        questions = data["questions"]
+        self.assertEqual(len(questions), len({question.questionId for question in questions}))
+        self.assertTrue(all(question.questionId == f"{question.skillId}-0" for question in questions))
+        self.assertIn("infrastructure", {question.skillId for question in questions})
+
+    def test_cloud_assessment_submission_scores_evidence_updates_and_roadmap(self):
+        started = start_diagnostic(DiagnosticStartRequest(target_role="cloud_engineer"))
+        result = submit_diagnostic(DiagnosticSubmitRequest(
+            target_role="cloud_engineer",
+            answers=[DiagnosticAnswer(questionId=question.questionId, skillId=question.skillId, answer=question.options[0]) for question in started["questions"]],
+        ))
+        self.assertEqual(result["target_role"], "cloud_engineer")
+        self.assertEqual(len(result["assessmentResults"]), len(started["questions"]))
+        self.assertTrue(result["evidence"])
+        self.assertIn("cloud_fundamentals", result["updatedSkills"])
+        self.assertIn("roadmap", result)
+
+    def test_supported_career_assessment_submissions_work(self):
+        for role in ("data_scientist", "cybersecurity_engineer"):
+            started = start_diagnostic(DiagnosticStartRequest(target_role=role))
+            result = submit_diagnostic(DiagnosticSubmitRequest(
+                target_role=role,
+                answers=[DiagnosticAnswer(questionId=question.questionId, skillId=question.skillId, answer=question.options[0]) for question in started["questions"]],
+            ))
+            self.assertTrue(result["assessmentResults"])
+            self.assertTrue(result["evidence"])
+            self.assertTrue(result["roadmap"])
+
+    def test_invalid_gemini_question_uses_deterministic_fallback(self):
+        class InvalidResponse:
+            text = '{"question": "", "options": ["only one"], "questionType": "unknown"}'
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                return InvalidResponse()
+
+        class FakeClient:
+            models = FakeModels()
+
+        with patch("main.get_gemini_client", return_value=FakeClient()):
+            question = start_diagnostic(DiagnosticStartRequest(target_role="cloud_engineer"))["questions"][0]
+        self.assertTrue(question.question)
+        self.assertEqual(len(question.options), 4)
+        self.assertEqual(question.questionType, "mcq")
+
+    def test_duplicate_or_mismatched_question_ids_are_rejected(self):
+        with self.assertRaises(Exception):
+            submit_diagnostic(DiagnosticSubmitRequest(
+                target_role="cloud_engineer",
+                answers=[DiagnosticAnswer(questionId="linux-0", skillId="linux", answer="x"), DiagnosticAnswer(questionId="linux-0", skillId="linux", answer="x")],
+            ))
+        with self.assertRaises(Exception):
+            submit_diagnostic(DiagnosticSubmitRequest(
+                target_role="cloud_engineer",
+                answers=[DiagnosticAnswer(questionId="linux-1", skillId="linux", answer="x")],
+            ))
+
+    def test_invalid_answer_payload_is_rejected(self):
+        with self.assertRaises(Exception):
+            submit_diagnostic(DiagnosticSubmitRequest(
+                target_role="cloud_engineer",
+                answers=[DiagnosticAnswer(questionId="not-a-question", skillId="linux", answer="x")],
+            ))
 
     def test_assessment_scoring_and_evidence(self):
         submit = DiagnosticSubmitRequest(

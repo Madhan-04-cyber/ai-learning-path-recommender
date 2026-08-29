@@ -49,7 +49,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800 bg-slate-950 px-4 py-6 md:flex">
       <Link href="/home" className="mb-8 block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/80">
         <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400"><Sparkles className="h-3.5 w-3.5" /> PathMind AI</span>
-        <span className="mt-2 block text-xs text-slate-500">Your career learning GPS</span>
+				<span className="mt-2 block text-xs text-slate-500">Your career route</span>
       </Link>
       <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600">Main</p>
       <nav className="space-y-1" aria-label="Main navigation">{primaryNavigation.map((item) => <NavLink key={item.href} item={item} />)}</nav>

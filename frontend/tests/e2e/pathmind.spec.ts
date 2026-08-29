@@ -66,6 +66,13 @@ test("cloud engineer flow selects cloud-relevant content", async ({ page }) => {
 	await page.getByRole("link", { name: /Continue to diagnostic/i }).click({ force: true });
 	await expect(page).toHaveURL(/\/assessment/);
 	await expect(page.getByText(/Cloud Engineer/i)).toBeVisible({ timeout: 15000 });
+	await page.getByRole("button", { name: /Begin diagnostic/i }).click();
+	await expect(page.getByText(/Career diagnostic/i)).toBeVisible({ timeout: 15000 });
+	for (const question of await page.locator("article").all()) {
+		await question.getByRole("button").first().click();
+	}
+	await page.getByRole("button", { name: /Submit assessment/i }).click();
+	await expect(page.getByText(/Diagnostic complete|Assessment complete/i)).toBeVisible({ timeout: 15000 });
 });
 
 test("cybersecurity engineer flow selects security-relevant content", async ({ page }) => {
@@ -91,4 +98,15 @@ test("analysis failure surfaces a usable error", async ({ page }) => {
 	await page.getByRole("button", { name: "Build my path" }).click();
 	await page.goto("/analysis");
 	await expect(page.getByText(/temporarily unavailable|could not analyze|We could not analyze that goal/i)).toBeVisible({ timeout: 15000 });
+});
+
+test("login details populate the learner profile", async ({ page }) => {
+	await page.goto("/login");
+	await page.getByLabel("Full name").fill("Alex Morgan");
+	await page.getByLabel("Email address").fill("alex@example.com");
+	await page.getByLabel("Password").fill("not-stored-password");
+	await page.getByRole("button", { name: /Continue to profile/i }).click();
+	await expect(page).toHaveURL(/\/profile/);
+	await expect(page.getByRole("heading", { name: "Alex Morgan" })).toBeVisible();
+	await expect(page.getByText("alex@example.com")).toBeVisible();
 });

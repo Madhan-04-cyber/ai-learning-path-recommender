@@ -55,7 +55,10 @@ export default function LandingPage() {
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-400 text-slate-950"><Sparkles className="h-4 w-4" /></span>
             <span><span className="block text-sm font-black tracking-wide text-white">PATHMIND AI</span><span className="block text-[10px] text-slate-500">Your career learning GPS</span></span>
           </button>
-          <a href="#how-it-works" className="hidden text-xs font-bold text-slate-400 transition-colors hover:text-emerald-400 sm:block">How it works</a>
+          <div className="flex items-center gap-4">
+            <a href="#how-it-works" className="hidden text-xs font-bold text-slate-400 transition-colors hover:text-emerald-400 sm:block">How it works</a>
+            <a href="/login" className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 transition-colors hover:border-emerald-400 hover:text-white">Log in</a>
+          </div>
         </header>
 
         <section className="grid items-center gap-12 py-20 lg:grid-cols-[1.08fr_0.92fr] lg:py-28">

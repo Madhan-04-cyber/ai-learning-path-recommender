@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Award, CircleAlert, Download, Medal, Sparkles, Target } from "lucide-react";
+import { ArrowRight, Award, CircleAlert, Medal, Sparkles, Target } from "lucide-react";
 import { AppShell } from "../components/app-shell";
 
 type Profile = {

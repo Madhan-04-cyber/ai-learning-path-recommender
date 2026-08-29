@@ -1390,9 +1390,9 @@ PRESET_QUIZZES = {
 
 ASSESSMENT_SKILL_GROUPS = {
     "data_scientist": ["python", "sql_basics", "numpy_pandas", "math_statistics", "machine_learning_basics"],
-    "cloud_engineer": ["linux", "networking", "cloud_fundamentals", "cloud_architecture", "containers", "cicd", "infrastructure"],
+    "cloud_engineer": ["linux", "networking", "cloud_fundamentals", "cloud_architecture", "containers", "ci_cd", "infrastructure"],
     "cybersecurity_engineer": ["networking", "linux", "security_fundamentals", "web_security", "security_monitoring", "incident_response"],
-    "devops_engineer": ["linux", "git", "containers", "cicd", "cloud_deployment", "monitoring"],
+    "devops_engineer": ["linux", "git", "containers", "ci_cd", "cloud_deployment", "monitoring"],
 }
 
 
@@ -3470,14 +3470,19 @@ def submit_diagnostic(request: DiagnosticSubmitRequest):
     """Scores diagnostic answers against the server-owned question bank."""
     if request.target_role not in CAREERS:
         raise HTTPException(status_code=404, detail="Career track not found.")
-    allowed_skills = set(resolve_prerequisites(CAREERS[request.target_role]["required_skills"], SKILL_GRAPH))
+    career = CAREERS[request.target_role]
+    allowed_skills = set(resolve_prerequisites(career.get("required_skills", []) + career.get("optional_skills", []), SKILL_GRAPH))
     results = []
     scores_by_skill: Dict[str, List[int]] = {}
     evidence_by_skill: Dict[str, List[Dict[str, Any]]] = {}
     current_skills: Dict[str, Dict[str, Any]] = dict(request.current_skills)
+    seen_question_ids = set()
     for answer in request.answers:
         if answer.skillId not in allowed_skills:
             raise HTTPException(status_code=400, detail="Question is not part of this career diagnostic.")
+        if answer.questionId in seen_question_ids or answer.questionId != f"{answer.skillId}-0":
+            raise HTTPException(status_code=400, detail="Invalid diagnostic question.")
+        seen_question_ids.add(answer.questionId)
         try:
             skill_index = int(answer.questionId.rsplit("-", 1)[1])
             if skill_index > 0:
@@ -3751,9 +3756,40 @@ def evaluate_proof_of_work(request: ProofOfWorkRequest):
         "ai_feedback": f"Clean repository layout scanned at {request.github_url}. Good separation of modular routes, correct env variables handling, and robust schemas. Milestone {request.milestone_title} verified."
     }
 
+def _is_greeting(message: str) -> bool:
+    return message.strip().lower().rstrip("!.,?") in {
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening"
+    }
+
+
+def build_coach_fallback_response(request: ChatRequest) -> str:
+    """Return a natural learner-facing response without exposing internal context."""
+    message = request.message.strip().lower()
+    skill = request.current_skill or "your current skill"
+    milestone = request.current_milestone or "the next milestone"
+    next_action = request.next_action or "the next roadmap item"
+    if _is_greeting(request.message):
+        return ("Hi! I'm your PathMind learning coach. You're currently working on your learning path. "
+                "Ask me about your current skill, next milestone, roadmap, project, or anything you're stuck on.")
+    if "skip" in message:
+        return f"I would not skip {skill} yet. It supports your current path, so verify it first or ask me about the blocker before moving to the next milestone."
+    if "what should i learn next" in message or "next step" in message or "learn next" in message:
+        return f"Your next focus is {next_action}. Start with one small exercise, then check your work before moving to the next milestone."
+    if "why am i learning" in message:
+        return f"{skill} supports your progress toward {milestone}. Building confidence here will make the next part of your learning path easier."
+    if "hint" in message or "stuck" in message or "don't understand" in message or "do not understand" in message:
+        return f"Let's take this one step at a time. Review the smallest example for {skill}, try it yourself, and share the exact point where it stops making sense."
+    if "explain" in message:
+        return f"I can explain {skill} step by step. Start by connecting it to the current milestone, then test the idea with a small example."
+    return "I can help with your learning path. Ask me about your current skill, next milestone, roadmap, project, or anything you're stuck on."
+
+
 @app.post("/api/chat")
 def chat_assistant(request: ChatRequest):
     """Context-aware assistant conversation with direct visibility of user's active learning roadmap."""
+    if _is_greeting(request.message):
+        return {"response": build_coach_fallback_response(request)}
+
     client = get_gemini_client()
     
     career_name = CAREERS.get(request.target_role, {}).get("name", request.target_role)
@@ -3761,7 +3797,7 @@ def chat_assistant(request: ChatRequest):
     weak_skills = [k for k, v in request.user_skills.items() if v.get("status") == "Needs Improvement"]
     system_prompt = build_coach_system_prompt(request, career_name)
     mentor_response = build_project_mentor_response(request, career_name)
-    if mentor_response and ("how" in request.message.lower() or "build" in request.message.lower() or "step" in request.message.lower() or "project" in request.message.lower() or "stuck" in request.message.lower()):
+    if client and mentor_response and ("how" in request.message.lower() or "build" in request.message.lower() or "step" in request.message.lower() or "project" in request.message.lower() or "stuck" in request.message.lower()):
         return {"response": mentor_response}
     
     if client:
@@ -3783,7 +3819,8 @@ def chat_assistant(request: ChatRequest):
             if not text:
                 raise ValueError("Empty AI response")
             return {"response": text}
-        except Exception as e:
+        except Exception:
+            return {"response": build_coach_fallback_response(request)}
             skip_requested = "skip" in request.message.lower()
             if skip_requested:
                 return {"response": f"Not recommended yet.\n\n{request.current_skill or 'This skill'} is still part of your current path. Use the verification assessment or complete the prerequisite steps before skipping it.\n\nIf you want, I can explain the specific blocker and the fastest safe verification path."}
@@ -3795,6 +3832,8 @@ def chat_assistant(request: ChatRequest):
             project_name = request.project_blueprint.get("whatYouAreBuilding") if isinstance(request.project_blueprint, dict) else None
             return {"response": f"I’m having trouble reaching the AI service right now. Based on your current context for **{career_name}** and **{project_name or request.current_milestone or 'your current project'}**, the safest next step is **{current_step or request.next_action or 'your next roadmap item'}**."}
             
+    return {"response": build_coach_fallback_response(request)}
+
     # Simple Static Fallback
     if "skip" in request.message.lower():
         return {

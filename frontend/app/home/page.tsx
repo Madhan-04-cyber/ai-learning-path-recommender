@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Compass, Sparkles, Target, TrendingUp, Zap } from "lucide-react";
+import { ArrowRight, BrainCircuit, CalendarDays, Compass, Sparkles, Target, TrendingUp } from "lucide-react";
 import { AppShell } from "../components/app-shell";
 
 type RoadmapItem = {
@@ -32,8 +32,6 @@ type Profile = {
 	learningInsight?: string;
 	roadmapChanged?: boolean;
 };
-
-const careerLabel = (targetRole?: string) => targetRole?.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) || "Your career goal";
 
 const BACKEND_URL = "";
 
@@ -85,7 +83,6 @@ export default function HomePage() {
 		void load();
 	}, []);
 
-	const careerGoal = careerLabel(profile?.target_role);
 	const completedCount = roadmap?.items.filter((item) => item.status === "COMPLETED").length || 0;
 	const currentCount = roadmap?.items.filter((item) => ["CURRENT", "AVAILABLE", "NEEDS_ATTENTION"].includes(item.status)).length || 0;
 	const lockedCount = roadmap?.items.filter((item) => item.status === "LOCKED").length || 0;

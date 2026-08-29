@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Bot, BookOpen, CircleAlert, RefreshCw, Sparkles } from "lucide-react";
+import { Bot, BookOpen, CircleAlert, RefreshCw, Sparkles } from "lucide-react";
 import { AppShell } from "../components/app-shell";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -41,6 +41,7 @@ type ProjectContext = {
 };
 
 const BACKEND_URL = "";
+const COACH_UNAVAILABLE_MESSAGE = "I can still help with your learning path. Ask me about your current skill, next milestone, roadmap, project, or anything you're stuck on.";
 
 const quickActions = [
 	"Why am I learning this?",
@@ -174,7 +175,7 @@ export default function CoachPage() {
 				body: JSON.stringify({
 					message,
 					history: messages.slice(-8).map((item) => ({ role: item.role, content: item.content })),
-					target_role: profile?.target_role || "backend_ai_developer",
+					target_role: profile?.target_role || "",
 					user_skills: profile?.user_skills || {},
 					...context,
 				}),
@@ -184,12 +185,11 @@ export default function CoachPage() {
 			const text = data.response?.trim();
 			if (!text) throw new Error("Empty AI response.");
 			setMessages((current) => [...current, { role: "assistant", content: text }]);
-		} catch (cause) {
+		} catch {
 			setMessages((current) => [
 				...current,
-				{ role: "assistant", content: "I'm having trouble reaching the AI service right now. I can still help using your local roadmap context." },
+				{ role: "assistant", content: COACH_UNAVAILABLE_MESSAGE },
 			]);
-			setError(cause instanceof Error ? cause.message : "AI unavailable.");
 		} finally {
 			setSending(false);
 		}

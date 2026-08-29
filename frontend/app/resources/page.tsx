@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpen, CircleAlert, Clock3, Layers3, Lock, Medal, Sparkles, Target, X } from "lucide-react";
+import { CircleAlert, Clock3, Layers3, Lock, Medal, Sparkles, Target } from "lucide-react";
 import { AppShell } from "../components/app-shell";
 
 type Profile = {
@@ -60,7 +60,7 @@ type ResourcesResponse = {
 	projects: SkillBucket[];
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 function titleize(value?: string | null) {
 	return value ? value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Unavailable";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpen, CircleAlert, CircleCheckBig, CircleDot, Compass, Layers3, Lock, RefreshCw, Search, Sparkles, Target } from "lucide-react";
+import { ArrowRight, BookOpen, CircleAlert, CircleCheckBig, Compass, Layers3, Lock, RefreshCw, Search, Sparkles, Target } from "lucide-react";
 import { AppShell } from "../components/app-shell";
 
 type SkillRecord = {
@@ -54,10 +54,6 @@ function titleize(value: string) {
 	return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function skillLabel(skill: SkillRecord) {
-	return `${skill.name} ${skill.currentLevel}% ${skill.status}`;
-}
-
 function evidenceLabel(item: SkillRecord["evidence"][number]) {
 	if (typeof item === "string") return item;
 	if (item && typeof item === "object") return item.label ? `${item.label}: ${item.value || ""}`.trim() : item.value || "Evidence";
@@ -78,7 +74,6 @@ function graphColor(status: SkillRecord["status"]) {
 export default function SkillsPage() {
 	const [analysis, setAnalysis] = useState<SkillAnalysisResponse | null>(null);
 	const [roadmap, setRoadmap] = useState<RoadmapResponse | null>(null);
-	const [profile, setProfile] = useState<Profile | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -122,7 +117,6 @@ export default function SkillsPage() {
 			if (!Array.isArray(skillData.skills)) throw new Error("Skill analysis was invalid.");
 			setAnalysis(skillData);
 			setRoadmap(roadmapData);
-			setProfile(savedProfile || { target_role: targetRole, user_skills: currentSkills });
 			setSelectedSkillId(skillData.skills.find((skill) => skill.status !== "LOCKED")?.id || skillData.skills[0]?.id || null);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Could not load skills.");

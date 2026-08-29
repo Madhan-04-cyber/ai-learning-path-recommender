@@ -180,8 +180,8 @@ export default function AnalysisPage() {
 										<Target className="h-5 w-5" />
 									</span>
 									<div>
-										<p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Career target</p>
-										<p className="mt-2 text-2xl font-black text-white">{analysis?.careerTitle || "Career target"}</p>
+										<p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Goal / career target</p>
+										<p className="mt-2 text-2xl font-black text-white">{analysis?.goal ? `${analysis.goal} -> ${analysis.careerTitle}` : analysis?.careerTitle || "Career target"}</p>
 										<p className="mt-2 text-sm leading-relaxed text-slate-400">
 											{analysis?.description || "A structured career route based on your goal."}
 										</p>
