@@ -78,11 +78,13 @@ export default function AnalysisPage() {
 			const data = JSON.parse(saved) as { goal?: string };
 			const savedGoal = typeof data.goal === "string" ? data.goal.trim() : "";
 			if (!savedGoal || savedGoal.length > 500) {
+				window.localStorage.removeItem("pathmind_onboarding");
 				window.setTimeout(() => {
 					setError("Your saved goal is invalid. Please enter it again.");
 				}, 0);
 				return;
 			}
+			window.localStorage.removeItem("pathmind_onboarding");
 			window.setTimeout(() => {
 				void analyzeGoal(savedGoal);
 			}, 0);

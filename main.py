@@ -1,6 +1,7 @@
 import os
 import math
 import json
+from difflib import get_close_matches
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1461,8 +1462,33 @@ def classify_goal(query: str) -> GoalAnalysis:
         ("backend_ai_developer", ["backend ai", "ai backend", "python ai", "backend developer"]),
         ("ai_engineer", ["ai engineer", "prompt engineering", "prompt engineer", "prompting", "llm"]),
         ("ml_engineer", ["machine learning", "ml engineer", "predictive"]),
-        ("data_scientist", ["data scientist", "data analyst", "analytics", "data analytics", "business intelligence", "statistics"]),
+        (
+            "data_scientist",
+            [
+                "data scientist",
+                "data analyst",
+                "data analysis",
+                "data analytics",
+                "analytics engineer",
+                "analytics",
+                "data science",
+                "business intelligence",
+                "bi analyst",
+                "statistics",
+            ],
+        ),
         ("full_stack_developer", ["full stack", "web dev", "frontend", "next.js"]),
+    ]
+
+    data_intent_phrases = [
+        "data scientist",
+        "data analyst",
+        "data analysis",
+        "data analytics",
+        "analytics engineer",
+        "data science",
+        "business intelligence",
+        "bi analyst",
     ]
 
     for career_id, keywords in keyword_rules:
@@ -1471,6 +1497,16 @@ def classify_goal(query: str) -> GoalAnalysis:
             confidence = 0.95
             reason = f"Matched by deterministic keyword rules for {CAREERS[career_id]['name']}."
             break
+
+    if not matched_career:
+        q_tokens = q.replace("-", " ").replace("/", " ").split()
+        if any(token in q for token in ["data", "analytics", "analyst", "analysis", "science", "statistics", "bi"]):
+            close_match = get_close_matches(q, data_intent_phrases, n=1, cutoff=0.72)
+            if close_match or any(phrase in q for phrase in ["data", "analytics", "analyst", "analysis", "science", "statistics", "bi"]):
+                matched_career = "data_scientist"
+                confidence = 0.9
+                reason = "Matched to the data scientist path using data-career intent and typo-tolerant matching."
+                extracted_skills = ["SQL", "Statistics", "Pandas", "Visualization"]
 
     if matched_career == "ai_engineer" and any(token in q for token in ["medical", "healthcare", "hospital", "clinical"]):
         support_level = "partial"
@@ -1515,6 +1551,7 @@ def classify_goal(query: str) -> GoalAnalysis:
             prompt = f"""
 Analyze this learning goal query: "{query}"
 Classify it into one supported career blueprint if possible.
+Prefer the data_scientist blueprint when the user is asking for analytics, BI, data analysis, or data science work.
 Return JSON with keys:
 - matched_career_id
 - support_level
