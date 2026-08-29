@@ -40,7 +40,7 @@ type ProjectContext = {
 	projectBlueprint?: ProjectBlueprint;
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const quickActions = [
 	"Why am I learning this?",
@@ -74,7 +74,7 @@ export default function CoachPage() {
 			try {
 				const savedProfile = JSON.parse(window.localStorage.getItem("pathmind_profile") || "null") as Profile | null;
 				const savedAnalysis = JSON.parse(window.localStorage.getItem("pathmind_analysis") || "null") as { matched_career_id?: string } | null;
-				const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "backend_ai_developer";
+				const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "";
 				setProfile(savedProfile || { target_role: targetRole });
 
 				const currentSkills = savedProfile?.user_skills || {};

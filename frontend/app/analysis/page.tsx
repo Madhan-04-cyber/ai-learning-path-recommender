@@ -25,8 +25,6 @@ const analysisSteps = [
 	"Building your route",
 ];
 
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
 export default function AnalysisPage() {
 	const [analysis, setAnalysis] = useState<GoalAnalysis | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -37,7 +35,7 @@ export default function AnalysisPage() {
 		setError("");
 
 		try {
-			const response = await fetch(`${backendUrl}/api/analyze-goal`, {
+			const response = await fetch("/api/analyze-goal", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ query }),
@@ -59,6 +57,7 @@ export default function AnalysisPage() {
 			}
 
 			const normalized = { ...result, goal: query } as GoalAnalysis;
+			window.localStorage.setItem("pathmind_onboarding", JSON.stringify({ goal: query, createdAt: new Date().toISOString() }));
 			window.localStorage.setItem("pathmind_analysis", JSON.stringify(normalized));
 			setAnalysis(normalized);
 		} catch {
@@ -84,7 +83,6 @@ export default function AnalysisPage() {
 				}, 0);
 				return;
 			}
-			window.localStorage.removeItem("pathmind_onboarding");
 			window.setTimeout(() => {
 				void analyzeGoal(savedGoal);
 			}, 0);
@@ -142,14 +140,14 @@ export default function AnalysisPage() {
 				) : error ? (
 					<section className="py-24 text-center">
 						<Target className="mx-auto h-10 w-10 text-rose-400" />
-						<h1 className="mt-5 text-3xl font-black text-white sm:text-4xl">We could not analyze that goal.</h1>
+						<h1 className="mt-5 text-3xl font-black text-white sm:text-4xl">Analysis unavailable</h1>
 						<p className="mt-3 text-sm text-slate-400">{error}</p>
 						<Link href="/" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-xs font-black uppercase text-slate-950">
 							Try again
 							<ArrowRight className="h-4 w-4" />
 						</Link>
 					</section>
-				) : analysis?.is_ambiguous ? (
+				) : analysis && (analysis.is_ambiguous || !analysis.matched_career_id) ? (
 					<section className="mx-auto max-w-2xl py-14 sm:py-20">
 						<div className="rounded-3xl border border-amber-500/25 bg-[radial-gradient(circle_at_top_left,_rgba(245,184,75,0.08),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.95),rgba(9,17,31,0.98))] p-6 shadow-2xl shadow-amber-950/10 sm:p-8">
 							<p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">More detail needed</p>

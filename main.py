@@ -1,10 +1,10 @@
 import os
 import math
 import json
-import os
 import re
+from datetime import datetime, timezone
 from difflib import get_close_matches
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -68,10 +68,29 @@ def build_coach_system_prompt(request: "ChatRequest", career_name: str) -> str:
         current_step = request.project_blueprint.get("implementationTasks", [None])[0] if isinstance(request.project_blueprint, dict) else None
         if current_step:
             context_lines.append(f"Current project step: {current_step}")
+    if request.project_title:
+        context_lines.append(f"Project title: {request.project_title}")
+    if request.project_description:
+        context_lines.append(f"Project description: {request.project_description}")
+    if request.project_milestone:
+        context_lines.append(f"Current milestone details: {json.dumps(request.project_milestone)}")
+    if request.project_learning_concepts:
+        context_lines.append(f"Learning concepts: {', '.join(request.project_learning_concepts)}")
+    if request.project_build_task:
+        context_lines.append(f"Build task: {request.project_build_task}")
+    if request.project_checkpoint:
+        context_lines.append(f"Checkpoint: {request.project_checkpoint}")
+    if request.project_milestone_skills:
+        context_lines.append(f"Milestone skills: {', '.join(request.project_milestone_skills)}")
+    if request.completed_milestones:
+        context_lines.append(f"Completed milestones: {', '.join(request.completed_milestones)}")
+    if request.relevant_assessment:
+        context_lines.append(f"Relevant assessment: {json.dumps(request.relevant_assessment)}")
     return f"""
 You are PathMind AI Coach.
 You are not a generic chatbot.
 You coach using only the learner context below and do not invent scores, milestones, or roadmap steps.
+When the user is asking about a project, act as a mentor for the current milestone and do not change the roadmap.
 
 Learner context:
 {chr(10).join(f'- {line}' for line in context_lines)}
@@ -80,6 +99,8 @@ Rules:
 - Explain recommendations using actual learner data when available.
 - If the user asks to skip a skill, do not mutate the roadmap. Explain why it is or is not safe and request verification.
 - If a project blueprint is available, explain the current build step, setup, validation, and troubleshooting in plain language.
+- Prefer hints, then small examples, then implementation direction, then debugging help.
+- Never claim mastery, unlock anything, or reorder milestones.
 - If data is unavailable, say so clearly.
 - Be concise, supportive, and specific.
 - Always output markdown.
@@ -93,7 +114,7 @@ def build_project_mentor_response(request: "ChatRequest", career_name: str) -> O
         return None
 
     message = request.message.lower()
-    build_keywords = ["build", "how do i", "how to", "implement", "project", "step", "setup", "stuck", "error", "next"]
+    build_keywords = ["build", "how do i", "how to", "implement", "project", "step", "setup", "stuck", "error", "next", "hint", "test", "debug", "understand"]
     if not any(keyword in message for keyword in build_keywords):
         return None
 
@@ -101,42 +122,79 @@ def build_project_mentor_response(request: "ChatRequest", career_name: str) -> O
     tasks = blueprint.get("implementationTasks") or []
     checks = blueprint.get("validationChecks") or []
     troubleshooting = blueprint.get("troubleshooting") or []
-    current_step = tasks[0] if tasks else "Start with the setup step and create the project structure."
+    milestone = request.project_milestone or {}
+    current_step = tasks[0] if tasks else request.current_milestone or "Start with the setup step and create the project structure."
     next_step = tasks[1] if len(tasks) > 1 else "Move to the first implementation task."
+    current_concepts = request.project_learning_concepts or milestone.get("learning_concepts") or milestone.get("concepts") or []
+    current_skills = request.project_milestone_skills or milestone.get("required_skills") or []
+    completed = request.completed_milestones or []
+    hints_shown = request.project_hints_shown or []
+    checkpoint = request.project_checkpoint or milestone.get("checkpoint") or "No checkpoint available."
+    assessment_lines = []
+    if request.relevant_assessment:
+        assessment_lines.append(f"Assessment: {json.dumps(request.relevant_assessment)}")
+
+    level = 1
+    if any(keyword in message for keyword in ["debug", "error", "stuck"]):
+        level = 5
+    elif any(keyword in message for keyword in ["example", "show me", "sample"]):
+        level = 4
+    elif any(keyword in message for keyword in ["hint", "give me a hint", "nudge"]):
+        level = 2
+    elif any(keyword in message for keyword in ["how do i", "what should i do next", "next", "setup", "step"]):
+        level = 3
 
     lines = [
         f"### Project Mentor for {career_name}",
         "",
-        f"**What you are building:** {blueprint.get('whatYouAreBuilding') or request.current_milestone or 'A skill-linked project'}",
+        f"**Project:** {blueprint.get('whatYouAreBuilding') or request.project_title or request.current_milestone or 'A skill-linked project'}",
+        f"**Project description:** {request.project_description or blueprint.get('description') or 'A skill-linked build task.'}",
+        f"**Current milestone:** {request.current_milestone or milestone.get('title') or 'Unknown'}",
+        f"**Milestone description:** {request.project_milestone_description or milestone.get('description') or milestone.get('objective') or 'No milestone description available.'}",
         "",
+        f"**Student request level:** {level}",
         f"**Current build step:** {current_step}",
         "",
-        "**Start here:**",
+        f"**Learning concepts:** {', '.join(current_concepts) if current_concepts else 'Not provided'}",
+        f"**Build task:** {request.project_build_task or milestone.get('build_task') or current_step}",
+        f"**Skills for this milestone:** {', '.join(current_skills) if current_skills else 'Not provided'}",
+        f"**Completed milestones:** {', '.join(completed) if completed else 'None yet'}",
+        f"**Checkpoint:** {checkpoint}",
     ]
-    if setup:
-        lines.extend([f"- {step}" for step in setup[:4]])
-    else:
-        lines.append("- Create the project folder and baseline files.")
+    if assessment_lines:
+        lines.extend(["", *assessment_lines])
 
-    lines.extend([
-        "",
-        f"**Next implementation step:** {next_step}",
-        "",
-        "**Validation checks:**",
-    ])
+    if setup:
+        lines.extend(["", "**Start here:**", *[f"- {step}" for step in setup[:4]]])
+
+    lines.extend(["", f"**Next implementation step:** {next_step}", "", "**Validation checks:**"])
     if checks:
         lines.extend([f"- {check}" for check in checks])
     else:
         lines.append("- Confirm the project runs and the expected output appears.")
 
-    lines.extend([
-        "",
-        "**Common troubleshooting:**",
-    ])
+    lines.extend(["", "**Hints already shown:**"])
+    if hints_shown:
+        lines.extend([f"- {hint}" for hint in hints_shown[:5]])
+    else:
+        lines.append("- None yet.")
+
+    lines.extend(["", "**Common troubleshooting:**"])
     if troubleshooting:
         lines.extend([f"- {item}" for item in troubleshooting[:3]])
     else:
         lines.append("- If you are stuck, reduce the problem to the smallest working step.")
+
+    if level == 1:
+        lines.extend(["", "**Mentor mode:** Concept explanation", "- I will explain the idea behind this milestone and why it matters."])
+    elif level == 2:
+        lines.extend(["", "**Mentor mode:** Small hint", "- I will give a narrow hint without giving away the full solution."])
+    elif level == 3:
+        lines.extend(["", "**Mentor mode:** Implementation direction", "- I will point you to the right sequence of steps."])
+    elif level == 4:
+        lines.extend(["", "**Mentor mode:** Example", "- I can show a small example that matches this project context."])
+    else:
+        lines.extend(["", "**Mentor mode:** Detailed debugging help", "- I will focus on the error, checkpoint, or failing behavior and help you diagnose it."])
 
     return "\n".join(lines)
 
@@ -1328,6 +1386,159 @@ PRESET_QUIZZES = {
         {"q": "What split ratio is commonly used for training/testing?", "options": ["50/50", "99/1", "80/20", "10/90"], "answer": "80/20"}
     ]
 }
+
+
+ASSESSMENT_SKILL_GROUPS = {
+    "data_scientist": ["python", "sql_basics", "numpy_pandas", "math_statistics", "machine_learning_basics"],
+    "cloud_engineer": ["linux", "networking", "cloud_fundamentals", "cloud_architecture", "containers", "cicd", "infrastructure"],
+    "cybersecurity_engineer": ["networking", "linux", "security_fundamentals", "web_security", "security_monitoring", "incident_response"],
+    "devops_engineer": ["linux", "git", "containers", "cicd", "cloud_deployment", "monitoring"],
+}
+
+
+QUESTION_TYPE_BY_SKILL = {
+    "python": "mcq",
+    "sql_basics": "mcq",
+    "numpy_pandas": "short_answer",
+    "math_statistics": "short_answer",
+    "machine_learning_basics": "mcq",
+    "cloud_fundamentals": "mcq",
+    "containers": "mcq",
+    "cicd": "short_answer",
+    "security_fundamentals": "mcq",
+    "web_security": "short_answer",
+    "incident_response": "short_answer",
+}
+
+
+def _assessment_skill_scope(target_role: str) -> List[str]:
+    career = CAREERS.get(target_role, {})
+    required = career.get("required_skills", [])
+    optional = career.get("optional_skills", [])
+    preferred = ASSESSMENT_SKILL_GROUPS.get(target_role, [])
+    scope = [skill for skill in preferred if skill in resolve_prerequisites(required + optional, SKILL_GRAPH)]
+    if scope:
+        return scope
+    resolved = resolve_prerequisites(required, SKILL_GRAPH)
+    return [skill for skill in resolved if skill in SKILL_GRAPH][:8]
+
+
+def _assessment_difficulty(skill_id: str, proficiency: int) -> str:
+    meta = SKILL_GRAPH.get(skill_id, {})
+    base = meta.get("difficulty", "Intermediate")
+    if proficiency < 35:
+        return "Beginner"
+    if proficiency < 70:
+        return "Intermediate"
+    return "Advanced" if base in {"Intermediate", "Advanced"} else base
+
+
+def _assessment_question_type(skill_id: str, question_type: Optional[str] = None) -> str:
+    if question_type in {"mcq", "short_answer", "coding"}:
+        return question_type
+    return QUESTION_TYPE_BY_SKILL.get(skill_id, "mcq")
+
+
+def _assessment_template_for_skill(skill_id: str, difficulty: str) -> Dict[str, Any]:
+    meta = SKILL_GRAPH.get(skill_id, {})
+    title = meta.get("title", skill_id.replace("_", " ").title())
+    if difficulty == "Beginner":
+        return {
+            "question": f"Which idea is most important when starting to learn {title}?",
+            "options": [
+                f"Understand the core purpose of {title}",
+                "Skip to the most advanced topic immediately",
+                "Memorize unrelated tools first",
+                "Ignore examples and practice",
+            ],
+            "answer": f"Understand the core purpose of {title}",
+            "explanation": f"Beginning with the core purpose of {title} helps build the right mental model.",
+        }
+    if difficulty == "Advanced":
+        return {
+            "question": f"How would you apply {title} in a real project with constraints and edge cases?",
+            "options": [
+                f"Describe a production-minded workflow using {title}",
+                "Use it without testing or validation",
+                "Skip prerequisites entirely",
+                "Only memorize the title",
+            ],
+            "answer": f"Describe a production-minded workflow using {title}",
+            "explanation": f"Advanced assessment checks for project-level application of {title}.",
+        }
+    return {
+        "question": f"What is the most accurate statement about {title}?",
+        "options": [
+            f"It is a core concept for {title}",
+            "It is unrelated to this career",
+            "It only matters for design color choices",
+            "It replaces all other skills",
+        ],
+        "answer": f"It is a core concept for {title}",
+        "explanation": f"This checks whether the learner understands the central idea of {title}.",
+    }
+
+
+def _safe_assessment_question(skill_id: str, proficiency: int, client: Optional[Any] = None) -> Dict[str, Any]:
+    difficulty = _assessment_difficulty(skill_id, proficiency)
+    question_type = _assessment_question_type(skill_id)
+    template = _assessment_template_for_skill(skill_id, difficulty)
+    question = {
+        "questionId": f"{skill_id}-0",
+        "skillId": skill_id,
+        "question": template["question"],
+        "options": template["options"],
+        "difficulty": difficulty,
+        "questionType": question_type,
+        "explanation": template["explanation"],
+    }
+    if client and skill_id in SKILL_GRAPH:
+        try:
+            prompt = f"""
+Generate exactly one assessment question for the skill below.
+Skill: {SKILL_GRAPH[skill_id]['title']}
+Description: {SKILL_GRAPH[skill_id].get('description', '')}
+Difficulty: {difficulty}
+Question type: {question_type}
+Return JSON with keys: question, options, answer, explanation, questionType.
+Rules:
+- options must have exactly 4 items for mcq
+- questionType must be one of mcq, short_answer, coding
+- answer must be a short reference answer or the exact correct option
+"""
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            data = json.loads(response.text)
+            if isinstance(data, dict):
+                candidate_options = data.get("options", template["options"])
+                candidate_type = _assessment_question_type(skill_id, data.get("questionType"))
+                if isinstance(candidate_options, list) and len(candidate_options) == 4 or candidate_type in {"short_answer", "coding"}:
+                    question.update({
+                        "question": str(data.get("question", question["question"])),
+                        "options": candidate_options if isinstance(candidate_options, list) else question["options"],
+                        "questionType": candidate_type,
+                        "explanation": str(data.get("explanation", question["explanation"])),
+                        "answer": str(data.get("answer", template["answer"])),
+                    })
+        except Exception:
+            pass
+    question["answer"] = template["answer"]
+    return question
+
+
+def _normalize_assessment_evidence(answer: Any, question: Dict[str, Any], score: int, correct: Optional[bool], evaluation: Optional[str] = None) -> Dict[str, Any]:
+    return AssessmentEvidenceItem(
+        score=score,
+        question_id=answer.questionId,
+        question_type=_assessment_question_type(answer.skillId, question.get("questionType")),
+        answer=answer.answer,
+        correct=correct,
+        evaluation=evaluation,
+        timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    ).model_dump()
 
 # --- Algorithms ---
 
@@ -2741,6 +2952,8 @@ class DiagnosticQuestion(BaseModel):
     question: str
     options: List[str]
     difficulty: str
+    questionType: Literal["mcq", "short_answer", "coding"] = "mcq"
+    explanation: Optional[str] = None
 
 class DiagnosticAnswer(BaseModel):
     questionId: str
@@ -2750,7 +2963,20 @@ class DiagnosticAnswer(BaseModel):
 class DiagnosticSubmitRequest(BaseModel):
     target_role: str
     known_skills: List[str] = Field(default_factory=list)
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     answers: List[DiagnosticAnswer] = Field(min_length=1)
+
+
+class AssessmentEvidenceItem(BaseModel):
+    evidence_type: str = "assessment"
+    source: str = "assessment"
+    score: int = Field(ge=0, le=100)
+    question_id: str
+    question_type: Literal["mcq", "short_answer", "coding"]
+    answer: str
+    correct: Optional[bool] = None
+    evaluation: Optional[str] = None
+    timestamp: str
 
 class AssessmentSubmitRequest(BaseModel):
     skill_id: str
@@ -2786,6 +3012,17 @@ class ChatRequest(BaseModel):
     bottleneck: Optional[str] = None
     next_action: Optional[str] = None
     project_blueprint: Optional[Dict[str, Any]] = None
+    project_title: Optional[str] = None
+    project_description: Optional[str] = None
+    project_milestone: Optional[Dict[str, Any]] = None
+    project_milestone_description: Optional[str] = None
+    project_learning_concepts: List[str] = Field(default_factory=list)
+    project_build_task: Optional[str] = None
+    project_checkpoint: Optional[str] = None
+    project_milestone_skills: List[str] = Field(default_factory=list)
+    project_hints_shown: List[str] = Field(default_factory=list)
+    completed_milestones: List[str] = Field(default_factory=list)
+    relevant_assessment: Optional[Dict[str, Any]] = None
 
 # --- API Route Endpoints ---
 
@@ -3018,7 +3255,7 @@ def complete_project(request: ProjectCompletionRequest):
         "value": request.project_title,
         "score": request.score,
         "summary": request.evidence_summary,
-        "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     current = dict(user_skills.get(request.skill_id, {}))
     current_evidence = list(current.get("evidence", []))
@@ -3215,31 +3452,18 @@ def start_diagnostic(request: DiagnosticStartRequest):
     """Returns a focused, answer-key-free diagnostic for the selected career."""
     if request.target_role not in CAREERS:
         raise HTTPException(status_code=404, detail="Career track not found.")
-
-    diagnostic_skills = [
-        skill_id for skill_id in [
-            "python", "oop", "git", "http_fundamentals", "rest_apis",
-            "sql_basics", "postgresql", "fastapi", "machine_learning_basics"
-        ] if skill_id in resolve_prerequisites(CAREERS[request.target_role]["required_skills"], SKILL_GRAPH)
-    ][:9]
+    client = get_gemini_client()
+    current_skills = {}
     questions = []
-    for skill_id in diagnostic_skills:
-        quiz = PRESET_QUIZZES.get(skill_id, [])
-        if not quiz:
-            quiz = [{
-                "q": f"Which idea is central to {SKILL_GRAPH[skill_id]['title']}?",
-                "options": ["Its core engineering concepts", "Page colors", "File names only", "None of these"],
-                "answer": "Its core engineering concepts"
-            }]
-        item = quiz[0]
-        questions.append(DiagnosticQuestion(
-            questionId=f"{skill_id}-0",
-            skillId=skill_id,
-            question=item["q"],
-            options=item["options"],
-            difficulty=SKILL_GRAPH[skill_id].get("difficulty", "Intermediate"),
-        ))
-    return {"target_role": request.target_role, "questions": questions}
+    for skill_id in _assessment_skill_scope(request.target_role):
+        proficiency = int(current_skills.get(skill_id, {}).get("proficiency", 0))
+        question = _safe_assessment_question(skill_id, proficiency, client)
+        questions.append(DiagnosticQuestion(**question))
+    return {
+        "target_role": request.target_role,
+        "careerTitle": CAREERS[request.target_role]["name"],
+        "questions": questions,
+    }
 
 @app.post("/api/diagnostic/submit")
 def submit_diagnostic(request: DiagnosticSubmitRequest):
@@ -3249,42 +3473,76 @@ def submit_diagnostic(request: DiagnosticSubmitRequest):
     allowed_skills = set(resolve_prerequisites(CAREERS[request.target_role]["required_skills"], SKILL_GRAPH))
     results = []
     scores_by_skill: Dict[str, List[int]] = {}
+    evidence_by_skill: Dict[str, List[Dict[str, Any]]] = {}
+    current_skills: Dict[str, Dict[str, Any]] = dict(request.current_skills)
     for answer in request.answers:
         if answer.skillId not in allowed_skills:
             raise HTTPException(status_code=400, detail="Question is not part of this career diagnostic.")
         try:
             skill_index = int(answer.questionId.rsplit("-", 1)[1])
-            if answer.skillId in PRESET_QUIZZES:
-                question = PRESET_QUIZZES[answer.skillId][skill_index]
-            elif skill_index == 0:
-                question = {
-                    "answer": "Its core engineering concepts"
-                }
-            else:
+            if skill_index > 0:
                 raise KeyError(answer.skillId)
+            question = _safe_assessment_question(answer.skillId, int(current_skills.get(answer.skillId, {}).get("proficiency", 0)), None)
         except (KeyError, IndexError, ValueError):
             raise HTTPException(status_code=400, detail="Invalid diagnostic question.")
-        correct = answer.answer == question["answer"]
-        score = 100 if correct else 0
+        q_type = _assessment_question_type(answer.skillId, question.get("questionType"))
+        if q_type == "mcq":
+            correct = answer.answer == question["answer"]
+            score = 100 if correct else 0
+            evaluation = "Deterministic MCQ evaluation"
+        else:
+            normalized = answer.answer.strip().lower()
+            answer_key = str(question["answer"]).strip().lower()
+            correct = normalized == answer_key or answer_key in normalized
+            score = 100 if correct else 40 if normalized else 0
+            evaluation = "Deterministic structured-answer evaluation"
         scores_by_skill.setdefault(answer.skillId, []).append(score)
+        evidence_by_skill.setdefault(answer.skillId, []).append(_normalize_assessment_evidence(answer, question, score, correct, evaluation))
         results.append({
             "questionId": answer.questionId,
             "skillId": answer.skillId,
             "answer": answer.answer,
             "correct": correct,
             "difficulty": SKILL_GRAPH[answer.skillId].get("difficulty", "Intermediate"),
+            "questionType": q_type,
+            "explanation": question.get("explanation"),
+            "score": score,
         })
     proficiency = {skill_id: round(sum(scores) / len(scores)) for skill_id, scores in scores_by_skill.items()}
     for skill_id in request.known_skills:
         if skill_id in allowed_skills and skill_id not in proficiency:
             proficiency[skill_id] = 25
     overall_score = round(sum(proficiency.values()) / len(proficiency)) if proficiency else 0
+    updated_skills: Dict[str, Dict[str, Any]] = {}
+    for skill_id, score in proficiency.items():
+        previous = dict(current_skills.get(skill_id, {}))
+        evidence = list(previous.get("evidence", []))
+        evidence.extend(evidence_by_skill.get(skill_id, []))
+        target = int(SKILL_GRAPH[skill_id].get("required_proficiency", 70))
+        updated_skills[skill_id] = {
+            **previous,
+            "proficiency": min(100, max(int(previous.get("proficiency", 0)), score)),
+            "status": "Completed" if score >= max(75, target) else "Needs Improvement" if score < 50 else "In Progress",
+            "confidence": "Verified" if score >= max(75, target) else "Assessed",
+            "last_assessment_score": score,
+            "evidence": evidence,
+        }
+    roadmap = generate_path(PathGenerationRequest(
+        user_id="assessment",
+        target_role=request.target_role,
+        current_skills=updated_skills,
+        hours_per_week=12,
+    ))
     return {
         "target_role": request.target_role,
+        "careerTitle": CAREERS[request.target_role]["name"],
         "assessmentResults": results,
         "skillProficiency": proficiency,
         "overallScore": overall_score,
         "verifiedSkills": [skill_id for skill_id, score in proficiency.items() if score >= 75],
+        "updatedSkills": updated_skills,
+        "evidence": [item for values in evidence_by_skill.values() for item in values],
+        "roadmap": roadmap["path"],
     }
 
 @app.post("/api/get-diagnostic")

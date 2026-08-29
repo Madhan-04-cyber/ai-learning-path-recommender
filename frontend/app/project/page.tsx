@@ -9,6 +9,7 @@ type Profile = {
 	target_role?: string;
 	interest?: string;
 	user_skills?: Record<string, { proficiency?: number; status?: string; confidence?: string; evidence?: unknown[] }>;
+	assessmentResults?: unknown[];
 };
 
 type ProjectMilestone = {
@@ -99,7 +100,7 @@ type ProjectState = {
 	hintsRevealed?: string[];
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 function safeParse<T>(value: string | null, fallback: T): T {
 	if (!value) return fallback;
@@ -166,6 +167,7 @@ export default function ProjectPage() {
 	const [error, setError] = useState("");
 	const [message, setMessage] = useState("");
 	const [coachReply, setCoachReply] = useState("");
+	const [mentorPrompt, setMentorPrompt] = useState("");
 	const [showHints, setShowHints] = useState(false);
 	const [expandedSteps, setExpandedSteps] = useState<number[]>([0]);
 	const [checkpointChecks, setCheckpointChecks] = useState<Record<string, boolean>>({});
@@ -187,9 +189,8 @@ export default function ProjectPage() {
 			const theme = item.project.project_theme.toLowerCase();
 			return normalizedInterest && (title.includes(normalizedInterest) || theme.includes(normalizedInterest) || (normalizedInterest.includes("cricket") && title.includes("ipl")));
 		});
-		const dataAnalystTheme = projects.find((item) => item.project.title.includes("IPL Player Performance Analytics"));
 		const unlocked = projects.find((item) => item.status !== "LOCKED");
-		const selected = themed || dataAnalystTheme || unlocked || projects[0];
+		const selected = themed || unlocked || projects[0];
 		return selected ? { ...selected } : null;
 	};
 
@@ -241,7 +242,8 @@ export default function ProjectPage() {
 			const savedProfile = safeParse<Profile | null>(window.localStorage.getItem("pathmind_profile"), null);
 			const savedAnalysis = safeParse<{ matched_career_id?: string } | null>(window.localStorage.getItem("pathmind_analysis"), null);
 			const savedProjectState = safeParse<ProjectState | null>(window.localStorage.getItem("pathmind_project_state"), null) || {};
-			const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "backend_ai_developer";
+			const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "";
+			if (!targetRole) throw new Error("Start with a career goal before opening Project.");
 			const currentSkills = savedProfile?.user_skills || {};
 			setProfile(savedProfile || { target_role: targetRole, user_skills: currentSkills });
 			setProjectState(savedProjectState);
@@ -376,11 +378,16 @@ export default function ProjectPage() {
 		setAiLoading(true);
 		setCoachReply("");
 		try {
+			const milestoneBlueprint = session.project.milestones.find((item) => item.milestone_id === activeMilestone.milestone_id) || activeMilestone;
+			const completedMilestones = (projectState.completedMilestones || [])
+				.map((milestoneId) => session.project.milestones.find((item) => item.milestone_id === milestoneId)?.title)
+				.filter((value): value is string => Boolean(value));
+			const mentorMessage = mentorPrompt.trim() || `I don't understand ${activeMilestone.title}. Can you help me with the current step?`;
 			const response = await fetch(`${BACKEND_URL}/api/chat`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					message: `I don't understand ${activeMilestone.title}. Can you help me with the current step?`,
+					message: mentorMessage,
 					history: [],
 					target_role: profile?.target_role || session.target_role,
 					user_skills: profile?.user_skills || {},
@@ -392,6 +399,17 @@ export default function ProjectPage() {
 					roadmap: [],
 					next_action: nextBestAction,
 					project_blueprint: session.build_guide,
+					project_title: session.project.title,
+					project_description: session.project.description,
+					project_milestone: milestoneBlueprint,
+					project_milestone_description: milestoneBlueprint.description || milestoneBlueprint.objective,
+					project_learning_concepts: milestoneBlueprint.learning_concepts || milestoneBlueprint.concepts || [],
+					project_build_task: milestoneBlueprint.build_task || milestoneBlueprint.objective,
+					project_checkpoint: milestoneBlueprint.checkpoint,
+					project_milestone_skills: milestoneBlueprint.required_skills,
+					project_hints_shown: projectState.hintsRevealed || [],
+					completed_milestones: completedMilestones,
+					relevant_assessment: profile?.assessmentResults?.at(-1) ? { last_assessment: profile.assessmentResults.at(-1) } : undefined,
 				}),
 			});
 			if (!response.ok) throw new Error("AI coach unavailable.");
@@ -401,6 +419,7 @@ export default function ProjectPage() {
 			setCoachReply(cause instanceof Error ? cause.message : "AI coach unavailable. Continue using the structured build steps and hints.");
 		} finally {
 			setAiLoading(false);
+			setMentorPrompt("");
 		}
 	};
 
@@ -439,7 +458,7 @@ export default function ProjectPage() {
 			<div className="space-y-5">
 				<section className="rounded-2xl border border-slate-800 bg-[linear-gradient(135deg,rgba(15,23,42,0.98),rgba(8,15,28,0.92))] p-5">
 					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
-						<FolderKanban className="h-3.5 w-3.5" /> Project Workspace
+						<FolderKanban className="h-3.5 w-3.5" /> Workspace overview
 					</div>
 					<div className="mt-4 grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
 						<div className="space-y-2">
@@ -453,7 +472,7 @@ export default function ProjectPage() {
 								<p className="mt-1 text-2xl font-black text-white">{completedCount} / {milestones.length || 0} milestones completed</p>
 							</div>
 							<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-								<p className="text-[10px] uppercase text-slate-500">Current milestone</p>
+								<p className="text-[10px] uppercase text-slate-500">Milestone status</p>
 								<p className="mt-1 text-lg font-black text-emerald-400">{activeMilestone?.title || "None"}</p>
 							</div>
 						</div>
@@ -556,6 +575,31 @@ export default function ProjectPage() {
 						</div>
 
 						<div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+							<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">
+								<RefreshCw className="h-3.5 w-3.5" /> Ask AI Mentor
+							</div>
+							<p className="mt-3 text-sm text-slate-400">Ask for a hint, explanation, test idea, or debugging help. The mentor stays tied to this milestone.</p>
+							<textarea
+								value={mentorPrompt}
+								onChange={(event) => setMentorPrompt(event.target.value)}
+								className="mt-4 min-h-24 w-full rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600"
+								placeholder="I’m stuck. Explain this step or give me a hint."
+							/>
+							<div className="mt-3 flex flex-wrap gap-2">
+								{["How do I start this milestone?", "Give me a hint.", "Why do I need this?", "How do I test this?"].map((prompt) => (
+									<button
+										key={prompt}
+										type="button"
+										onClick={() => setMentorPrompt(prompt)}
+										className="rounded-full border border-slate-700 px-3 py-1 text-[10px] font-black uppercase text-slate-300"
+									>
+										{prompt}
+									</button>
+								))}
+							</div>
+						</div>
+
+						<div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
 							<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400"><ArrowRight className="h-3.5 w-3.5" /> Build this</div>
 							<p className="mt-3 text-sm leading-relaxed text-slate-300">{buildProjectGuidance}</p>
 							<div className="mt-4 space-y-3">
@@ -612,7 +656,7 @@ export default function ProjectPage() {
 									{completing ? "Completing..." : "Submit Checkpoint"}
 								</button>
 								<button onClick={() => void askCoach()} disabled={aiLoading} className="rounded-xl border border-slate-700 px-4 py-3 text-xs font-black uppercase text-slate-200 disabled:opacity-50">
-									{aiLoading ? "Asking..." : "Ask AI Coach"}
+									{aiLoading ? "Asking..." : mentorPrompt.trim() ? "Ask AI Mentor" : "Ask AI Coach"}
 								</button>
 								<button onClick={() => startMilestone(activeMilestone?.milestone_id || "")} className="rounded-xl border border-slate-700 px-4 py-3 text-xs font-black uppercase text-slate-200">
 									Start Milestone

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Bell, Search, Sparkles, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
@@ -27,6 +28,23 @@ function NavLink({ item, mobile = false }: { item: NavigationItem; mobile?: bool
 }
 
 export function Sidebar() {
+  const [currentGoal, setCurrentGoal] = useState("Your career goal");
+  const [goalProgress, setGoalProgress] = useState("0% career ready");
+
+  useEffect(() => {
+    try {
+      const savedProfile = JSON.parse(window.localStorage.getItem("pathmind_profile") || "null") as { target_role?: string } | null;
+      const savedAnalysis = JSON.parse(window.localStorage.getItem("pathmind_analysis") || "null") as { matched_career_id?: string; careerTitle?: string } | null;
+      const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "";
+      const goalTitle = savedAnalysis?.careerTitle || targetRole?.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase()) || "Your career goal";
+      setCurrentGoal(goalTitle);
+      setGoalProgress(targetRole ? "0% career ready" : "0% career ready");
+    } catch {
+      setCurrentGoal("Your career goal");
+      setGoalProgress("0% career ready");
+    }
+  }, []);
+
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800 bg-slate-950 px-4 py-6 md:flex">
       <Link href="/home" className="mb-8 block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/80">
@@ -40,8 +58,8 @@ export function Sidebar() {
       <nav className="space-y-1" aria-label="Secondary navigation">{secondaryNavigation.map((item) => <NavLink key={item.href} item={item} />)}</nav>
       <div className="mt-auto rounded-xl border border-slate-800 bg-slate-900/70 p-3">
         <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Current goal</p>
-        <p className="mt-1 text-xs font-bold text-white">Backend AI Developer</p>
-        <p className="mt-2 text-[10px] text-emerald-400">0% career ready</p>
+        <p className="mt-1 text-xs font-bold text-white">{currentGoal}</p>
+        <p className="mt-2 text-[10px] text-emerald-400">{goalProgress}</p>
       </div>
     </aside>
   );

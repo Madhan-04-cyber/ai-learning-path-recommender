@@ -28,6 +28,7 @@ type Profile = {
 	dailyLearningMinutes?: number;
 	daily_learning_minutes?: number;
 	learningPreferences?: string[];
+	assessmentResults?: unknown[];
 	learningInsight?: string;
 	roadmapChanged?: boolean;
 };
@@ -41,6 +42,7 @@ export default function HomePage() {
 	const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
+	const [projectTitle, setProjectTitle] = useState("");
 
 	useEffect(() => {
 		const load = async () => {
@@ -49,23 +51,29 @@ export default function HomePage() {
 			try {
 				const savedProfile = JSON.parse(window.localStorage.getItem("pathmind_profile") || "null") as Profile | null;
 				const savedAnalysis = JSON.parse(window.localStorage.getItem("pathmind_analysis") || "null") as { matched_career_id?: string; careerTitle?: string } | null;
-				const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "backend_ai_developer";
+				const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "";
+				if (!targetRole) {
+					setError("Start with a career goal before opening Home.");
+					return;
+				}
 				const currentSkills = savedProfile?.user_skills || {};
 				setProfile(savedProfile || { target_role: targetRole, user_skills: currentSkills });
+				setProjectTitle(window.localStorage.getItem("pathmind_project_title") || "");
 
-				const response = await fetch(`${BACKEND_URL}/api/path/generate`, {
+				const response = await fetch(`${BACKEND_URL}/api/generate-path`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
+						user_id: "pathmind-local-user",
 						target_role: targetRole,
 						current_skills: currentSkills,
-						daily_learning_minutes: savedProfile?.dailyLearningMinutes || savedProfile?.daily_learning_minutes || 60,
-						learning_preferences: savedProfile?.learningPreferences || [],
-						assessment_results: [],
+						hours_per_week: Math.max(1, Math.round((savedProfile?.dailyLearningMinutes || savedProfile?.daily_learning_minutes || 60) * 7 / 60)),
+						learning_style: savedProfile?.learningPreferences?.join(", ") || "Prefer Videos",
 					}),
 				});
 				if (!response.ok) throw new Error("We could not load your route.");
-				const data = (await response.json()) as RoadmapData;
+				const raw = (await response.json()) as { path?: Array<Record<string, unknown>>; next_action?: Record<string, unknown>; validation?: RoadmapData["validation"] };
+				const data = { items: (raw.path || []).map((item) => ({ id: String(item.id || ""), skillId: String(item.skill || ""), title: String(item.title || ""), type: "LEARN" as const, reason: String(item.why_recommended || ""), status: String(item.status || ""), estimatedTime: `${item.estimated_hours || 0} hours` })), nextBestAction: raw.next_action ? { id: String(raw.next_action.skill_id || ""), skillId: String(raw.next_action.skill_id || ""), title: String(raw.next_action.title || ""), type: "LEARN" as const, reason: String(raw.next_action.reason || ""), status: String(raw.next_action.status || ""), estimatedTime: `${raw.next_action.estimated_hours || 0} hours` } : null, estimatedDuration: "Adaptive route", validation: raw.validation || { valid: true, errors: [] } };
 				if (!Array.isArray(data.items) || !data.nextBestAction || typeof data.estimatedDuration !== "string") throw new Error("Roadmap data was invalid.");
 				setRoadmap(data);
 			} catch (cause) {
@@ -127,7 +135,7 @@ export default function HomePage() {
 				<section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
 					<div className="rounded-2xl border border-emerald-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(82,224,179,0.12),_transparent_35%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(9,17,31,0.92))] p-6">
 						<p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-400"><Sparkles className="h-3.5 w-3.5" /> Hello again</p>
-						<h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">{careerGoal}</h2>
+						<h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Your learning route</h2>
 						<p className="mt-3 text-sm text-slate-400">We keep your route focused on the skills that unlock the next milestone, not a random course list.</p>
 						<div className="mt-6 flex flex-wrap gap-3">
 							<div className="rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-3"><p className="text-[10px] uppercase text-slate-500">Career readiness</p><p className="mt-1 text-2xl font-black text-emerald-400">{readiness}%</p></div>
@@ -139,6 +147,7 @@ export default function HomePage() {
 							<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400"><Target className="h-3.5 w-3.5" /> Next best action</div>
 							<h3 className="mt-3 text-2xl font-black text-white">{nextAction?.title || "Waiting for your roadmap"}</h3>
 							<p className="mt-2 text-sm leading-relaxed text-slate-400">{insight}</p>
+							{projectTitle ? <p className="mt-3 text-sm font-bold text-emerald-300">Project: {projectTitle}</p> : null}
 							<div className="mt-5 flex flex-wrap items-center gap-3">
 								{nextAction ? <Link href="/path" className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-950"><ArrowRight className="h-4 w-4" /> Start now</Link> : null}
 							</div>

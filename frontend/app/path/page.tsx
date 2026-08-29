@@ -42,7 +42,7 @@ type NodeGroup = {
 	items: RoadmapItem[];
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 const statusLabel: Record<string, string> = {
 	CURRENT: "Current",
@@ -87,23 +87,26 @@ export default function PathPage() {
 		try {
 			const savedProfile = JSON.parse(window.localStorage.getItem("pathmind_profile") || "null") as Profile | null;
 			const savedAnalysis = JSON.parse(window.localStorage.getItem("pathmind_analysis") || "null") as { matched_career_id?: string } | null;
-			const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "backend_ai_developer";
+			const targetRole = savedProfile?.target_role || savedAnalysis?.matched_career_id || "";
+			if (!targetRole) throw new Error("Start with a career goal before opening My Path.");
 			const currentSkills = savedProfile?.user_skills || {};
 			setProfile(savedProfile || { target_role: targetRole, user_skills: currentSkills });
 
-			const response = await fetch(`${BACKEND_URL}/api/path/generate`, {
+			const response = await fetch(`${BACKEND_URL}/api/generate-path`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
+					user_id: "pathmind-local-user",
 					target_role: targetRole,
 					current_skills: currentSkills,
-					daily_learning_minutes: savedProfile?.dailyLearningMinutes || savedProfile?.daily_learning_minutes || 60,
-					learning_preferences: savedProfile?.learningPreferences || [],
-					assessment_results: savedProfile?.assessmentResults || [],
+					hours_per_week: Math.max(1, Math.round((savedProfile?.dailyLearningMinutes || savedProfile?.daily_learning_minutes || 60) * 7 / 60)),
+					learning_style: savedProfile?.learningPreferences?.join(", ") || "Prefer Videos",
 				}),
 			});
 			if (!response.ok) throw new Error("We could not build your learning route.");
-			const data = (await response.json()) as RoadmapData;
+			const raw = (await response.json()) as { path?: Array<Record<string, unknown>>; next_action?: Record<string, unknown>; validation?: RoadmapData["validation"] };
+			const normalizeItem = (item: Record<string, unknown>): RoadmapItem => ({ id: String(item.id || ""), skillId: String(item.skill || ""), title: String(item.title || ""), type: "LEARN", reason: String(item.why_recommended || ""), prerequisites: Array.isArray(item.prerequisites) ? item.prerequisites.map(String) : [], estimatedTime: `${item.estimated_hours || 0} hours`, difficulty: String(item.difficulty || "Intermediate"), status: String(item.status || ""), resources: [], assessment: { required: Boolean(item.assessment_required), skillId: String(item.skill || "") }, project: {} });
+			const data: RoadmapData = { items: (raw.path || []).map(normalizeItem), nextBestAction: raw.next_action ? normalizeItem(raw.next_action) : null, estimatedDuration: "Adaptive route", validation: raw.validation || { valid: true, errors: [] } };
 			if (!Array.isArray(data.items)) throw new Error("The roadmap response was invalid.");
 			setRoadmap(data);
 			const firstSelected = data.nextBestAction?.skillId || data.items.find((item) => item.status === "CURRENT")?.skillId || data.items[0]?.skillId || null;
@@ -369,4 +372,3 @@ export default function PathPage() {
 		</AppShell>
 	);
 }
-
