@@ -3,12 +3,14 @@ import unittest
 from main import (
     GoalAnalysisRequest,
     analyze_goal,
+    build_contextual_resources,
     PathGenerationRequest,
     calculateCareerReadiness,
     isCareerReady,
     generate_path,
     resolve_prerequisites,
     topological_sort,
+    select_adaptive_project,
 )
 
 
@@ -106,6 +108,30 @@ class LearningEngineTests(unittest.TestCase):
         result = analyze_goal(GoalAnalysisRequest(query="I want to become a medical AI engineer"))
         self.assertEqual(result.support_level, "partial")
         self.assertEqual(result.matched_career_id, "ai_engineer")
+
+    def test_project_blueprint_has_milestones_and_guide(self):
+        graph = {
+            "fastapi": {"title": "FastAPI", "prerequisites": ["python"], "required_proficiency": 80, "estimated_hours": 8, "difficulty": "Intermediate", "resources": []},
+            "python": {"title": "Python", "prerequisites": [], "required_proficiency": 70, "estimated_hours": 6, "difficulty": "Beginner", "resources": []},
+        }
+        project = select_adaptive_project("fastapi", 40, graph)
+        self.assertIn("milestones", project)
+        self.assertGreaterEqual(len(project["milestones"]), 3)
+        self.assertIn("projectBlueprint", project)
+        self.assertIn("whatYouAreBuilding", project["projectBlueprint"])
+
+    def test_contextual_resources_include_project_reference(self):
+        graph = {
+            "python": {"title": "Python", "prerequisites": [], "required_proficiency": 70, "estimated_hours": 6, "difficulty": "Beginner", "resources": []},
+        }
+        resources = build_contextual_resources("python", graph, 10)
+        self.assertTrue(any(item["type"] == "Project" for item in resources))
+
+    def test_interest_personalizes_data_analyst_project(self):
+        graph = __import__("main").SKILL_GRAPH
+        project = __import__("main").build_project_blueprint("data_scientist", 20, graph, interest="cricket")
+        self.assertIn("IPL", project["title"])
+        self.assertEqual(project["project_theme"], "sports-analytics")
 
 
 if __name__ == "__main__":

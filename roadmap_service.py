@@ -72,6 +72,19 @@ def validate_skill_graph(skill_ids: Iterable[str], graph: Dict[str, Dict[str, An
         visit(skill_id)
 
 
+def resolve_prerequisites(required_skills: Iterable[str], graph: Dict[str, Dict[str, Any]]) -> List[str]:
+    """Expand the scope to include all prerequisite skills before validation."""
+    resolved = set(required_skills)
+    queue = list(required_skills)
+    while queue:
+        current = queue.pop(0)
+        for prerequisite in graph.get(current, {}).get("prerequisites", []):
+            if prerequisite not in resolved:
+                resolved.add(prerequisite)
+                queue.append(prerequisite)
+    return list(resolved)
+
+
 def dependency_traversal(skill_ids: Iterable[str], graph: Dict[str, Dict[str, Any]]) -> List[str]:
     """Return a stable prerequisite-first order."""
     validate_skill_graph(skill_ids, graph)
@@ -154,7 +167,8 @@ def generate_roadmap(
     """Build a deterministic, prerequisite-aware route from learner evidence."""
     current_skills = current_skills or {}
     scope_ids = list(dict.fromkeys([*required_skill_ids, *optional_skill_ids]))
-    ordered_ids = dependency_traversal(scope_ids, graph)
+    resolved_scope_ids = resolve_prerequisites(scope_ids, graph)
+    ordered_ids = dependency_traversal(resolved_scope_ids, graph)
     models = build_skill_models(ordered_ids, graph, current_skills)
     model_by_id = {skill.id: skill for skill in models}
     required = set(required_skill_ids)

@@ -25,7 +25,7 @@ const analysisSteps = [
 	"Building your route",
 ];
 
-const backendUrl = "";
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export default function AnalysisPage() {
 	const [analysis, setAnalysis] = useState<GoalAnalysis | null>(null);

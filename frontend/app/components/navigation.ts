@@ -4,6 +4,7 @@ import {
   Bot,
   Home,
   Map,
+  FolderKanban,
   Settings,
   Target,
   UserRound,
@@ -13,6 +14,7 @@ import type { LucideIcon } from "lucide-react";
 export type AppRoute =
   | "/home"
   | "/path"
+  | "/project"
   | "/skills"
   | "/coach"
   | "/progress"
@@ -29,6 +31,7 @@ export type NavigationItem = {
 export const primaryNavigation: NavigationItem[] = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/path", label: "My Path", icon: Map },
+  { href: "/project", label: "Project", icon: FolderKanban },
   { href: "/skills", label: "Skills", icon: Target },
   { href: "/coach", label: "AI Coach", icon: Bot },
   { href: "/progress", label: "Progress", icon: BarChart3 },

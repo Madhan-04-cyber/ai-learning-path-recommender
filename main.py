@@ -1,6 +1,8 @@
 import os
 import math
 import json
+import os
+import re
 from difflib import get_close_matches
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
@@ -10,6 +12,7 @@ from google import genai
 from google.genai import types
 from skill_engine import analyze_skill_gaps, build_skill_models
 from roadmap_service import Roadmap, generate_roadmap, replan_path
+from project_engine import build_project_blueprint, build_project_session
 
 # Initialize FastAPI App
 app = FastAPI(title="PathMind AI - Personalized Learning Path Engine")
@@ -236,6 +239,205 @@ CAREERS = {
                 "Create backend REST API with Node.js/Express.",
                 "Integrate PostgreSQL database with ORM schemas.",
                 "Add secure JWT authentication and route guard protection."
+            ]
+        }
+    }
+    ,
+    "cloud_engineer": {
+        "id": "cloud_engineer",
+        "name": "Cloud Engineer",
+        "description": "Designs and operates cloud-native systems, infrastructure, deployment pipelines, and monitoring.",
+        "required_skills": [
+            "python", "git", "linux", "networking", "cloud_fundamentals", "cloud_architecture", "cloud_deployment", "containers", "monitoring"
+        ],
+        "optional_skills": ["infrastructure", "ci_cd"],
+        "capstone_project": {
+            "title": "Cloud-Native Deployment Platform",
+            "description": "Build a cloud deployment pipeline with infrastructure, containers, and observability.",
+            "requirements": [
+                "Design a cloud architecture for a web service.",
+                "Deploy a containerized service and monitor uptime.",
+                "Automate releases with CI/CD and IaC."
+            ]
+        }
+    },
+    "cybersecurity_engineer": {
+        "id": "cybersecurity_engineer",
+        "name": "Cybersecurity Engineer",
+        "description": "Protects systems and applications through secure design, monitoring, and incident response.",
+        "required_skills": [
+            "python", "git", "linux", "networking", "security_fundamentals", "auth_security", "web_security", "security_monitoring", "incident_response"
+        ],
+        "optional_skills": ["monitoring"],
+        "capstone_project": {
+            "title": "Secure Web Application Lab",
+            "description": "Build a safe lab environment to evaluate authentication, web security, and monitoring controls.",
+            "requirements": [
+                "Create a secure API with authentication controls.",
+                "Add monitoring and alerting for suspicious activity.",
+                "Document an incident response playbook for the lab."
+            ]
+        }
+    },
+    "devops_engineer": {
+        "id": "devops_engineer",
+        "name": "DevOps Engineer",
+        "description": "Builds automation, deployment, and infrastructure workflows for software delivery.",
+        "required_skills": [
+            "git", "python", "linux", "networking", "docker", "ci_cd", "infrastructure", "cloud_deployment", "monitoring"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Automated Delivery Pipeline",
+            "description": "Create a reproducible delivery pipeline that builds, tests, and deploys a service.",
+            "requirements": [
+                "Containerize a service and deploy it automatically.",
+                "Add monitoring and rollback-friendly release steps.",
+                "Document infrastructure provisioning."
+            ]
+        }
+    },
+    "blockchain_engineer": {
+        "id": "blockchain_engineer",
+        "name": "Blockchain Engineer",
+        "description": "Builds blockchain applications using cryptography, distributed systems, and smart contracts.",
+        "required_skills": [
+            "python", "git", "blockchain_fundamentals", "cryptography", "distributed_systems", "smart_contracts", "blockchain_security"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Blockchain Application Sandbox",
+            "description": "Create a safe blockchain prototype that demonstrates ledger concepts and contract deployment.",
+            "requirements": [
+                "Understand how blocks and ledgers are connected.",
+                "Implement and test a simple smart contract in a safe sandbox.",
+                "Add security checks for common contract mistakes."
+            ]
+        }
+    },
+    "iot_engineer": {
+        "id": "iot_engineer",
+        "name": "IoT Engineer",
+        "description": "Connects devices, sensors, and networked systems into data-driven applications.",
+        "required_skills": [
+            "python", "git", "networking", "embedded_systems", "sensors", "iot_protocols", "data_processing"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Connected Device Monitoring Lab",
+            "description": "Build a small IoT data pipeline that ingests sensor-style inputs and processes them safely.",
+            "requirements": [
+                "Model a device-to-server data flow.",
+                "Process incoming telemetry safely.",
+                "Visualize sensor output trends."
+            ]
+        }
+    },
+    "rpa_developer": {
+        "id": "rpa_developer",
+        "name": "RPA Developer",
+        "description": "Automates repeatable business workflows with reliable software bots and process design.",
+        "required_skills": [
+            "python", "git", "process_design", "workflow_automation", "rpa_tools"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Business Workflow Automation Lab",
+            "description": "Build an automation workflow that simulates a business process and records success/failure safely.",
+            "requirements": [
+                "Map a process into discrete automation steps.",
+                "Implement a workflow that handles retries and validation.",
+                "Report the automation outcome clearly."
+            ]
+        }
+    },
+    "robotics_engineer": {
+        "id": "robotics_engineer",
+        "name": "Robotics Engineer",
+        "description": "Develops robotics foundations, embedded systems, and control-oriented software workflows.",
+        "required_skills": [
+            "python", "robotics_fundamentals", "embedded_systems", "control_systems"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Robotics Simulation Project",
+            "description": "Build a safe simulation that demonstrates robotics control concepts without hardware risk.",
+            "requirements": [
+                "Model a feedback loop or movement simulation.",
+                "Validate control behavior in a simulator.",
+                "Explain how robotics logic interacts with AI components."
+            ]
+        }
+    },
+    "cloud_security_engineer": {
+        "id": "cloud_security_engineer",
+        "name": "Cloud Security Engineer",
+        "description": "Combines cloud architecture with cybersecurity fundamentals, secure deployment, and monitoring.",
+        "required_skills": [
+            "networking", "linux", "cloud_fundamentals", "cloud_architecture", "cloud_deployment", "containers", "security_fundamentals", "auth_security", "web_security", "security_monitoring", "incident_response"
+        ],
+        "optional_skills": ["monitoring", "ci_cd", "infrastructure"],
+        "capstone_project": {
+            "title": "Secure Cloud Deployment Lab",
+            "description": "Build a cloud deployment workflow with secure controls and monitoring.",
+            "requirements": [
+                "Design a cloud service layout with secure access.",
+                "Add monitoring and alerting for suspicious activity.",
+                "Document a safe incident response plan."
+            ]
+        }
+    },
+    "blockchain_security_engineer": {
+        "id": "blockchain_security_engineer",
+        "name": "Blockchain Security Engineer",
+        "description": "Combines blockchain fundamentals with security practices, cryptography, and safe smart contracts.",
+        "required_skills": [
+            "python", "git", "blockchain_fundamentals", "cryptography", "distributed_systems", "smart_contracts", "blockchain_security", "security_fundamentals"
+        ],
+        "optional_skills": [],
+        "capstone_project": {
+            "title": "Blockchain Security Review Lab",
+            "description": "Analyze blockchain concepts with a focus on defensive engineering and contract safety.",
+            "requirements": [
+                "Explain blockchain security principles.",
+                "Review a mock smart contract for safe patterns.",
+                "Summarize attack surface and mitigations in a lab context."
+            ]
+        }
+    },
+    "robotics_ai_engineer": {
+        "id": "robotics_ai_engineer",
+        "name": "Robotics AI Engineer",
+        "description": "Combines robotics foundations with artificial intelligence for safe intelligent systems.",
+        "required_skills": [
+            "python", "robotics_fundamentals", "embedded_systems", "control_systems", "numpy_pandas", "math_statistics", "machine_learning_basics", "ai_apis"
+        ],
+        "optional_skills": ["deep_learning"],
+        "capstone_project": {
+            "title": "Robotics AI Simulation",
+            "description": "Build a safe simulation showing how AI interacts with robotics control and perception.",
+            "requirements": [
+                "Model a robotics control loop.",
+                "Use AI to interpret a simulated signal.",
+                "Document how the two systems work together safely."
+            ]
+        }
+    },
+    "medical_ai_engineer": {
+        "id": "medical_ai_engineer",
+        "name": "Medical AI Engineer",
+        "description": "Combines healthcare technology with AI and data workflows while avoiding clinical medicine curriculum.",
+        "required_skills": [
+            "numpy_pandas", "math_statistics", "machine_learning_basics", "ai_apis", "rag", "fastapi"
+        ],
+        "optional_skills": ["embeddings", "vector_databases"],
+        "capstone_project": {
+            "title": "Healthcare AI Support Tool",
+            "description": "Build a safe technology-only AI workflow for healthcare data analysis and support tasks.",
+            "requirements": [
+                "Process healthcare-like data safely.",
+                "Use AI for support tasks, not clinical diagnosis.",
+                "Document boundaries and responsible use."
             ]
         }
     }
@@ -526,6 +728,306 @@ SKILL_GRAPH = {
         ],
         "practice": ["Set up Render web service.", "Write GitHub Action pipeline yaml."],
         "project": {"title": "Auto-Deploying FastAPI Production", "description": "Create a repo with GitHub Actions configured to build a Docker image and deploy to Render on git push."}
+    },
+    "networking": {
+        "id": "networking",
+        "title": "Networking Fundamentals",
+        "description": "IP addressing, ports, DNS, routing, and troubleshooting basics.",
+        "prerequisites": [],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Networking basics", "type": "Documentation", "url": "https://www.cloudflare.com/learning/network-layer/what-is-a-computer-network/"}],
+        "practice": ["Explain the purpose of DNS and ports.", "Trace a simple client-server request path."],
+        "project": {"title": "Network Diagnostic Workbook", "description": "Document how a client reaches a service using IP, DNS, and ports."}
+    },
+    "linux": {
+        "id": "linux",
+        "title": "Linux Fundamentals",
+        "description": "Shell navigation, permissions, processes, services, and package management.",
+        "prerequisites": [],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Linux Journey", "type": "Course", "url": "https://linuxjourney.com/"}],
+        "practice": ["List files and directories.", "Inspect running processes and service status."],
+        "project": {"title": "Linux Admin Checklist", "description": "Perform safe Linux inspection and maintenance tasks."}
+    },
+    "cloud_fundamentals": {
+        "id": "cloud_fundamentals",
+        "title": "Cloud Fundamentals",
+        "description": "Virtualization, regions, compute, storage, scaling, and managed service concepts.",
+        "prerequisites": ["networking", "linux"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "AWS Cloud Practitioner Essentials", "type": "Course", "url": "https://aws.amazon.com/training/course-descriptions/cloud-practitioner-essentials/"}],
+        "practice": ["Describe cloud regions and availability zones.", "Compare managed and self-hosted services."],
+        "project": {"title": "Cloud Concepts Map", "description": "Create a reference diagram for cloud service types and deployment models."}
+    },
+    "cloud_architecture": {
+        "id": "cloud_architecture",
+        "title": "Cloud Architecture",
+        "description": "Designing reliable cloud systems, scaling patterns, and service composition.",
+        "prerequisites": ["cloud_fundamentals"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "AWS Well-Architected Framework", "type": "Documentation", "url": "https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html"}],
+        "practice": ["Sketch a stateless app architecture.", "Compare single-region and multi-region designs."],
+        "project": {"title": "Reference Cloud Architecture", "description": "Design a cloud architecture for a web service with scaling and resilience notes."}
+    },
+    "containers": {
+        "id": "containers",
+        "title": "Containers & Orchestration Basics",
+        "description": "Images, containers, runtime basics, and orchestration concepts.",
+        "prerequisites": ["docker"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Container Basics", "type": "Article", "url": "https://docs.docker.com/get-started/"}],
+        "practice": ["Build and run a container image.", "Explain image layers vs containers."],
+        "project": {"title": "Container Runbook", "description": "Document how to build, run, and inspect a containerized service."}
+    },
+    "ci_cd": {
+        "id": "ci_cd",
+        "title": "CI/CD Automation",
+        "description": "Continuous integration, continuous delivery, test gating, and release workflows.",
+        "prerequisites": ["git"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "GitHub Actions Docs", "type": "Documentation", "url": "https://docs.github.com/actions"}],
+        "practice": ["Add a build step to a workflow.", "Trigger tests on pull requests."],
+        "project": {"title": "Pipeline Skeleton", "description": "Create a CI/CD workflow that builds and validates a repository on every change."}
+    },
+    "infrastructure": {
+        "id": "infrastructure",
+        "title": "Infrastructure as Code",
+        "description": "Provisioning and managing environments as code with repeatable configuration.",
+        "prerequisites": ["cloud_fundamentals", "ci_cd"],
+        "required_proficiency": 70,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Infrastructure as Code Overview", "type": "Article", "url": "https://www.hashicorp.com/resources/what-is-infrastructure-as-code"}],
+        "practice": ["Describe desired-state infrastructure.", "Compare mutable and immutable deployments."],
+        "project": {"title": "Environment Provisioning Blueprint", "description": "Draft reproducible infrastructure steps for a sample application."}
+    },
+    "security_fundamentals": {
+        "id": "security_fundamentals",
+        "title": "Security Fundamentals",
+        "description": "Core security principles, threat modeling, least privilege, and safe engineering habits.",
+        "prerequisites": ["networking", "linux"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Security Principles Overview", "type": "Article", "url": "https://www.cisa.gov/topics/cybersecurity-best-practices"}],
+        "practice": ["Explain least privilege.", "Identify basic threat categories."],
+        "project": {"title": "Security Principles Sheet", "description": "Write a short assessment of threats and protections for a sample app."}
+    },
+    "web_security": {
+        "id": "web_security",
+        "title": "Web Security",
+        "description": "Common web risks, secure input handling, and safe session design.",
+        "prerequisites": ["security_fundamentals", "auth_security"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "OWASP Top 10 Overview", "type": "Documentation", "url": "https://owasp.org/www-project-top-ten/"}],
+        "practice": ["Identify insecure patterns in a sample API.", "Describe input validation defenses."],
+        "project": {"title": "Secure Web Review", "description": "Review a safe sample application for common web risks and document mitigations."}
+    },
+    "security_monitoring": {
+        "id": "security_monitoring",
+        "title": "Security Monitoring",
+        "description": "Log analysis, alerts, anomaly spotting, and basic detection workflows.",
+        "prerequisites": ["monitoring", "security_fundamentals"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Security Monitoring Basics", "type": "Article", "url": "https://www.splunk.com/en_us/data-insider/what-is-security-monitoring.html"}],
+        "practice": ["Review log snippets for suspicious patterns.", "Write a detection checklist."],
+        "project": {"title": "Monitoring Simulation", "description": "Analyze sample logs and outline safe alerting rules."}
+    },
+    "incident_response": {
+        "id": "incident_response",
+        "title": "Incident Response",
+        "description": "Triage, containment, analysis, recovery, and post-incident learning for safe systems.",
+        "prerequisites": ["security_monitoring"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Incident Response Planning", "type": "Documentation", "url": "https://www.cisa.gov/resources-tools/resources/incident-response-plan-brochure"}],
+        "practice": ["Write a basic incident response checklist.", "Classify incident severity from a scenario."],
+        "project": {"title": "Response Runbook", "description": "Prepare a safe incident response guide for a sample service."}
+    },
+    "blockchain_fundamentals": {
+        "id": "blockchain_fundamentals",
+        "title": "Blockchain Fundamentals",
+        "description": "Distributed ledgers, blocks, transactions, consensus, and blockchain concepts.",
+        "prerequisites": ["python", "git"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Blockchain Basics", "type": "Article", "url": "https://ethereum.org/en/what-is-ethereum/"}],
+        "practice": ["Explain a ledger and transaction.", "Compare blockchain and traditional databases."],
+        "project": {"title": "Ledger Concept Notebook", "description": "Document how blocks, hashes, and transactions relate in a safe educational lab."}
+    },
+    "cryptography": {
+        "id": "cryptography",
+        "title": "Applied Cryptography",
+        "description": "Hashes, digital signatures, public/private keys, and secure communication basics.",
+        "prerequisites": ["blockchain_fundamentals", "security_fundamentals"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Cryptography Explained", "type": "Article", "url": "https://www.cloudflare.com/learning/ssl/what-is-cryptography/"}],
+        "practice": ["Explain hashing vs encryption.", "Describe the role of digital signatures."],
+        "project": {"title": "Crypto Concepts Guide", "description": "Create a safe learning guide that explains cryptographic primitives."}
+    },
+    "distributed_systems": {
+        "id": "distributed_systems",
+        "title": "Distributed Systems",
+        "description": "Consistency, replication, fault tolerance, and distributed coordination basics.",
+        "prerequisites": ["networking", "linux"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Distributed Systems Overview", "type": "Article", "url": "https://www.oreilly.com/library/view/designing-data-intensive/9781491903063/"}],
+        "practice": ["Explain replication and consensus at a high level.", "Compare single-node and distributed failures."],
+        "project": {"title": "Distributed Concepts Map", "description": "Document a safe comparison of distributed system properties."}
+    },
+    "smart_contracts": {
+        "id": "smart_contracts",
+        "title": "Smart Contracts",
+        "description": "Contract logic, state changes, and safe deployment concepts for blockchain applications.",
+        "prerequisites": ["blockchain_fundamentals", "cryptography"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Solidity Docs", "type": "Documentation", "url": "https://docs.soliditylang.org/"}],
+        "practice": ["Read a simple contract and explain its state.", "Identify safe contract design practices."],
+        "project": {"title": "Smart Contract Walkthrough", "description": "Review a simple contract pattern in a sandbox environment."}
+    },
+    "blockchain_security": {
+        "id": "blockchain_security",
+        "title": "Blockchain Security",
+        "description": "Safe blockchain engineering practices, contract review, and attack surface awareness.",
+        "prerequisites": ["blockchain_fundamentals", "security_fundamentals"],
+        "required_proficiency": 75,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Smart Contract Security Basics", "type": "Article", "url": "https://consensys.io/blog/blockchain-security/"}],
+        "practice": ["Identify a safe contract pattern.", "Explain a common contract risk in defensive terms."],
+        "project": {"title": "Blockchain Safety Review", "description": "Review a mock blockchain project for safe engineering practices."}
+    },
+    "embedded_systems": {
+        "id": "embedded_systems",
+        "title": "Embedded Systems",
+        "description": "Low-level system concepts, device interactions, and constrained computing basics.",
+        "prerequisites": ["python"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Embedded Systems Basics", "type": "Article", "url": "https://www.embedded.com/"}],
+        "practice": ["Explain a device loop.", "Describe how sensors feed embedded software."],
+        "project": {"title": "Device Loop Workbook", "description": "Map robotics and device components and explain their safe operation."}
+    },
+    "sensors": {
+        "id": "sensors",
+        "title": "Sensors & Telemetry",
+        "description": "Reading physical measurements and converting them to data streams.",
+        "prerequisites": ["embedded_systems", "networking"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Sensors Overview", "type": "Article", "url": "https://learn.sparkfun.com/tutorials/sensors/all"}],
+        "practice": ["Describe what a sensor measures.", "Map telemetry to a structured record."],
+        "project": {"title": "Sensor Data Notes", "description": "Create a safe data flow note for sample telemetry."}
+    },
+    "iot_protocols": {
+        "id": "iot_protocols",
+        "title": "IoT Protocols",
+        "description": "Protocols and messaging patterns used by connected devices.",
+        "prerequisites": ["sensors", "networking"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "MQTT Essentials", "type": "Article", "url": "https://mqtt.org/"}],
+        "practice": ["Compare push vs pull messaging.", "Describe device telemetry routing."],
+        "project": {"title": "IoT Messaging Guide", "description": "Document a safe device-to-server message flow."}
+    },
+    "data_processing": {
+        "id": "data_processing",
+        "title": "Data Processing for Telemetry",
+        "description": "Cleaning, aggregating, and validating data from connected systems.",
+        "prerequisites": ["numpy_pandas", "iot_protocols"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Data Processing Basics", "type": "Article", "url": "https://pandas.pydata.org/docs/"}],
+        "practice": ["Aggregate sample readings.", "Filter malformed telemetry rows."],
+        "project": {"title": "Telemetry Cleaning Workbook", "description": "Create a simple data cleaning pipeline for simulated device data."}
+    },
+    "process_design": {
+        "id": "process_design",
+        "title": "Process Design",
+        "description": "Mapping business steps into deterministic automation-ready workflows.",
+        "prerequisites": ["python"],
+        "required_proficiency": 70,
+        "estimated_hours": 5,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Workflow Mapping Basics", "type": "Article", "url": "https://www.lucidchart.com/pages/process-mapping"}],
+        "practice": ["Diagram a repetitive business process.", "Identify automation steps and exceptions."],
+        "project": {"title": "Workflow Blueprint", "description": "Translate a sample office workflow into automation steps."}
+    },
+    "workflow_automation": {
+        "id": "workflow_automation",
+        "title": "Workflow Automation",
+        "description": "Automating repetitive tasks with scriptable, reliable, and auditable steps.",
+        "prerequisites": ["process_design", "python"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Automation Concepts", "type": "Article", "url": "https://www.atlassian.com/work-management/project-management/process-automation"}],
+        "practice": ["Outline retry logic for an automation task.", "Validate input/output steps in sequence."],
+        "project": {"title": "Automation Flow Lab", "description": "Write a safe automation flow that simulates repeatable office tasks."}
+    },
+    "rpa_tools": {
+        "id": "rpa_tools",
+        "title": "RPA Tools",
+        "description": "Using automation tools to execute workflows in a controlled environment.",
+        "prerequisites": ["workflow_automation"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "RPA Overview", "type": "Article", "url": "https://www.uipath.com/rpa/robotic-process-automation"}],
+        "practice": ["Simulate a bot stepping through a task.", "Document a safe bot exception handling flow."],
+        "project": {"title": "RPA Sandbox", "description": "Prototype an automation bot in a safe, educational scenario."}
+    },
+    "robotics_fundamentals": {
+        "id": "robotics_fundamentals",
+        "title": "Robotics Fundamentals",
+        "description": "Robotics concepts, kinematics basics, and safe robot system modeling.",
+        "prerequisites": ["python"],
+        "required_proficiency": 70,
+        "estimated_hours": 6,
+        "difficulty": "Beginner",
+        "resources": [{"title": "Robotics Basics", "type": "Article", "url": "https://www.robotics.org/"}],
+        "practice": ["Explain a robot's sensing and actuation loop.", "Describe a feedback controller at a high level."],
+        "project": {"title": "Robotics Concepts Notebook", "description": "Map robotics components and explain their safe operation."}
+    },
+    "control_systems": {
+        "id": "control_systems",
+        "title": "Control Systems",
+        "description": "Feedback loops, stability, and control theory basics for robotics and automation.",
+        "prerequisites": ["robotics_fundamentals", "math_statistics"],
+        "required_proficiency": 70,
+        "estimated_hours": 8,
+        "difficulty": "Intermediate",
+        "resources": [{"title": "Control Systems Introduction", "type": "Article", "url": "https://www.mathworks.com/discovery/control-systems.html"}],
+        "practice": ["Explain feedback and stability.", "Sketch a simple control loop."],
+        "project": {"title": "Control Loop Study", "description": "Document a safe control loop and how it responds to changes."}
     },
     
     # Advanced AI Career Tracks
@@ -1050,114 +1552,13 @@ def isCareerReady(required_skills: List[str], user_skills: Dict[str, Any], skill
 
 def select_adaptive_project(skill_id: str, proficiency: int, skill_graph: Dict[str, Any]) -> Dict[str, Any]:
     """Return a milestone project tailored to the learner level."""
+    project = build_project_blueprint(skill_id, proficiency, skill_graph)
     skill_title = skill_graph.get(skill_id, {}).get("title", skill_id)
-    skill_meta = skill_graph.get(skill_id, {})
-    prerequisites = skill_meta.get("prerequisites", [])
+    prerequisites = skill_graph.get(skill_id, {}).get("prerequisites", [])
     competency_focus = [skill_title] + [skill_graph.get(prereq, {}).get("title", prereq) for prereq in prerequisites[:2]]
-    setup_steps = [
-        "Create the project folder and basic file structure.",
-        "Install the required runtime and dependencies.",
-        "Load or define a small sample dataset or request payload.",
-        "Run the first verification command to confirm the environment works.",
-    ]
-    if proficiency < 45:
-        return {
-            "title": f"{skill_title} REST API",
-            "goal": "Build a simple service while practicing the core competency behind this skill.",
-            "skills": [skill_id],
-            "prerequisites": [],
-            "difficulty": "Beginner",
-            "estimatedTime": "4-6 hours",
-            "expectedOutput": "A small REST endpoint with validation and a basic response model.",
-            "evaluationCriteria": ["Returns correct responses", "Uses validation", "Follows route structure"],
-            "competencyFocus": competency_focus,
-            "projectBlueprint": {
-                "whatYouAreBuilding": f"A beginner-friendly {skill_title} project that teaches the core skill through a small working application.",
-                "requirements": [skill_title],
-                "techStack": ["The skill itself", "A lightweight test runner or REPL"],
-                "architecture": ["Input", "Core logic", "Output", "Validation"],
-                "setup": setup_steps,
-                "implementationTasks": [
-                    "Create the minimal project skeleton.",
-                    "Implement one end-to-end example.",
-                    "Add input validation and error handling.",
-                    "Run the checks and fix any failing case.",
-                ],
-                "validationChecks": ["Project starts", "Core example runs", "Validation errors are handled"],
-                "commonMistakes": ["Skipping validation", "Trying to build too much at once", "Not checking outputs early"],
-                "troubleshooting": ["If the setup fails, confirm paths and dependencies.", "If the result is wrong, reduce the example to a smaller case."],
-            },
-            "milestones": [
-                {"title": "Plan the scope", "teaches": [skill_title], "assesses": ["Requirements clarity"]},
-                {"title": "Implement the core flow", "teaches": [skill_title], "assesses": ["Basic implementation"]},
-                {"title": "Verify with checks", "teaches": [skill_title], "assesses": ["Validation and correctness"]},
-            ],
-        }
-    if proficiency < 75:
-        return {
-            "title": f"{skill_title} ML Prediction API",
-            "goal": "Ship a working environment that connects the target skill with prerequisite competencies.",
-            "skills": [skill_id, "rest_apis"],
-            "prerequisites": ["rest_apis"],
-            "difficulty": "Intermediate",
-            "estimatedTime": "6-10 hours",
-            "expectedOutput": "A documented API with clear request and response contracts.",
-            "evaluationCriteria": ["Reusable API design", "Validates input", "Produces useful output"],
-            "competencyFocus": competency_focus + ["REST API Design"],
-            "projectBlueprint": {
-                "whatYouAreBuilding": f"A structured {skill_title} project that reinforces prerequisite skills while teaching implementation order.",
-                "requirements": [skill_title, "REST API Design"],
-                "techStack": ["REST API", "Documentation", "Unit checks"],
-                "architecture": ["Contract", "Implementation", "Tests", "Review"],
-                "setup": setup_steps,
-                "implementationTasks": [
-                    "Define the input and output contract.",
-                    "Implement the project in small milestones.",
-                    "Connect the prerequisite skill to the target skill.",
-                    "Validate the workflow and record evidence.",
-                ],
-                "validationChecks": ["Contract is clear", "Implementation matches the contract", "Tests pass"],
-                "commonMistakes": ["Ignoring prerequisites", "Skipping the contract", "Not testing the workflow"],
-                "troubleshooting": ["If something breaks, check the contract first.", "If the route is unavailable, revisit prerequisites."],
-            },
-            "milestones": [
-                {"title": "Review prerequisite skill", "teaches": [skill_graph.get("rest_apis", {}).get("title", "REST API Design")], "assesses": ["Prerequisite alignment"]},
-                {"title": "Build the API contract", "teaches": [skill_title, "REST API Design"], "assesses": ["Request / response shape"]},
-                {"title": "Test the workflow", "teaches": [skill_title], "assesses": ["Correctness under test"]},
-            ],
-        }
-    return {
-        "title": f"{skill_title} RAG-powered AI Backend",
-        "goal": "Build a production-style environment where the final project is a sequence of checked learning milestones.",
-        "skills": [skill_id, "fastapi", "postgresql", "ai_apis", "rag"],
-        "prerequisites": ["fastapi", "postgresql"],
-        "difficulty": "Advanced",
-        "estimatedTime": "10-18 hours",
-        "expectedOutput": "A backend that can retrieve context, answer queries, and store evidence.",
-        "evaluationCriteria": ["Handles retrieval flow", "Stores evidence", "Supports review and reassessment"],
-        "competencyFocus": competency_focus + [skill_graph.get("fastapi", {}).get("title", "FastAPI"), skill_graph.get("postgresql", {}).get("title", "PostgreSQL")],
-        "projectBlueprint": {
-            "whatYouAreBuilding": f"A guided {skill_title} project environment with a clear build order and verification path.",
-            "requirements": [skill_title, "FastAPI", "PostgreSQL"],
-            "techStack": ["FastAPI", "PostgreSQL", "AI API", "Test client"],
-            "architecture": ["Project scaffold", "Data layer", "API layer", "Verification layer"],
-            "setup": setup_steps,
-            "implementationTasks": [
-                "Create the directory structure and install dependencies.",
-                "Build the API and storage components.",
-                "Wire the retrieval or orchestration flow.",
-                "Run the evaluation and record evidence.",
-            ],
-            "validationChecks": ["API responds", "Storage works", "Evidence is recorded"],
-            "commonMistakes": ["Coupling all steps together too early", "Skipping data validation", "Treating the project like a static assignment"],
-            "troubleshooting": ["If responses fail, verify the API contract.", "If storage fails, isolate the database step.", "If evidence is missing, review the milestone output."],
-        },
-        "milestones": [
-            {"title": "Design the architecture", "teaches": ["FastAPI", "PostgreSQL"], "assesses": ["System design", "Dependency awareness"]},
-            {"title": "Implement retrieval and storage", "teaches": [skill_title, "FastAPI", "PostgreSQL"], "assesses": ["Data flow", "Persistence"]},
-            {"title": "Verify with evidence", "teaches": [skill_title], "assesses": ["Evaluation", "Evidence quality"]},
-        ],
-    }
+    project["competencyFocus"] = competency_focus
+    project["skills"] = [skill_id, *prerequisites[:2]]
+    return project
 
 
 def build_contextual_resources(skill_id: str, skill_graph: Dict[str, Any], proficiency: int) -> List[Dict[str, Any]]:
@@ -1287,6 +1688,20 @@ def validate_and_repair_path(ordered_skills: List[str], user_skills: Dict[str, A
 class GoalAnalysisRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
 
+
+class GoalClassification(BaseModel):
+    target_role: str
+    domain: str
+    specialization: Optional[str] = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    support_level: str = Field(pattern="^(supported|partial|outside_scope)$")
+    reason: str
+    clarification_question: Optional[str] = None
+    related_supported_roles: List[str] = Field(default_factory=list)
+    domains: List[str] = Field(default_factory=list)
+    normalized_goal: str = ""
+    intermediate_intent: str = ""
+
 class GoalAnalysis(BaseModel):
     goal: str
     careerTitle: str
@@ -1306,6 +1721,7 @@ class GoalAnalysis(BaseModel):
     extracted_skills: List[str] = Field(default_factory=list)
     target_outcome: str = ""
     related_supported_roles: List[str] = Field(default_factory=list)
+    competencies: List[str] = Field(default_factory=list)
 
 class SkillAnalysisRequest(BaseModel):
     target_role: str
@@ -1337,6 +1753,7 @@ class ProgressSummaryRequest(BaseModel):
 class ResourceProjectRequest(BaseModel):
     target_role: str
     current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    interest: str = ""
 
 
 class ProjectCompletionRequest(BaseModel):
@@ -1377,6 +1794,72 @@ CAREER_CLASSIFICATION_HINTS = {
         "specialization": "full stack web development",
         "support_level": "supported",
         "related_supported_roles": ["backend_ai_developer"],
+    },
+    "cloud_engineer": {
+        "domain": "cloud",
+        "specialization": "cloud engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["devops_engineer", "backend_ai_developer"],
+    },
+    "cybersecurity_engineer": {
+        "domain": "cybersecurity",
+        "specialization": "cybersecurity engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["cloud_engineer", "devops_engineer"],
+    },
+    "devops_engineer": {
+        "domain": "devops",
+        "specialization": "devops engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["cloud_engineer", "backend_ai_developer"],
+    },
+    "blockchain_engineer": {
+        "domain": "blockchain",
+        "specialization": "blockchain engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["cybersecurity_engineer"],
+    },
+    "iot_engineer": {
+        "domain": "iot",
+        "specialization": "internet of things engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["cloud_engineer"],
+    },
+    "rpa_developer": {
+        "domain": "rpa",
+        "specialization": "robotic process automation",
+        "support_level": "supported",
+        "related_supported_roles": ["backend_ai_developer"],
+    },
+    "robotics_engineer": {
+        "domain": "robotics",
+        "specialization": "robotics engineering",
+        "support_level": "supported",
+        "related_supported_roles": ["ai_engineer"],
+    },
+    "cloud_security_engineer": {
+        "domain": "cloud",
+        "specialization": "cloud security engineering",
+        "support_level": "partial",
+        "related_supported_roles": ["cloud_engineer", "cybersecurity_engineer"],
+    },
+    "blockchain_security_engineer": {
+        "domain": "blockchain",
+        "specialization": "blockchain security engineering",
+        "support_level": "partial",
+        "related_supported_roles": ["blockchain_engineer", "cybersecurity_engineer"],
+    },
+    "robotics_ai_engineer": {
+        "domain": "robotics",
+        "specialization": "robotics ai engineering",
+        "support_level": "partial",
+        "related_supported_roles": ["robotics_engineer", "ai_engineer"],
+    },
+    "medical_ai_engineer": {
+        "domain": "artificial_intelligence",
+        "specialization": "artificial intelligence + healthcare technology",
+        "support_level": "partial",
+        "related_supported_roles": ["ai_engineer", "data_scientist"],
     },
 }
 
@@ -1447,158 +1930,775 @@ def build_goal_analysis(
     )
 
 
-def classify_goal(query: str) -> GoalAnalysis:
-    q = query.strip().lower()
-    matched_career = None
-    support_level = "supported"
-    reason = ""
-    confidence = 0.0
-    clarification_question = ""
-    is_ambiguous = False
-    related_supported_roles: List[str] = []
-    extracted_skills: List[str] = []
+DETERMINISTIC_CONFIDENCE_THRESHOLD = float(os.getenv("DETERMINISTIC_CONFIDENCE_THRESHOLD", "0.90"))
 
-    keyword_rules = [
-        ("backend_ai_developer", ["backend ai", "ai backend", "python ai", "backend developer"]),
-        ("ai_engineer", ["ai engineer", "prompt engineering", "prompt engineer", "prompting", "llm"]),
-        ("ml_engineer", ["machine learning", "ml engineer", "predictive"]),
-        (
-            "data_scientist",
-            [
-                "data scientist",
-                "data analyst",
-                "data analysis",
-                "data analytics",
-                "analytics engineer",
-                "analytics",
-                "data science",
-                "business intelligence",
-                "bi analyst",
-                "statistics",
-            ],
-        ),
-        ("full_stack_developer", ["full stack", "web dev", "frontend", "next.js"]),
-    ]
-
-    data_intent_phrases = [
-        "data scientist",
+GOAL_ALIASES = {
+    "data_scientist": [
         "data analyst",
-        "data analysis",
         "data analytics",
-        "analytics engineer",
         "data science",
+        "data scientist",
+        "analytics engineer",
         "business intelligence",
         "bi analyst",
-    ]
+        "data analysis",
+    ],
+    "backend_ai_developer": [
+        "backend ai",
+        "ai backend",
+        "cloud engineer",
+        "cloud computing",
+        "cloud security engineer",
+        "software backend",
+        "api backend",
+    ],
+    "ai_engineer": [
+        "ai engineer",
+        "artificial intelligence engineer",
+        "generative ai engineer",
+        "medical ai engineer",
+        "llm engineer",
+        "prompt engineer",
+    ],
+    "ml_engineer": [
+        "machine learning engineer",
+        "ml engineer",
+        "model evaluation",
+        "model serving",
+        "predictive modeling",
+    ],
+    "full_stack_developer": [
+        "full stack developer",
+        "web developer",
+        "frontend developer",
+        "react developer",
+        "next js developer",
+    ],
+}
 
-    for career_id, keywords in keyword_rules:
-        if any(keyword in q for keyword in keywords):
-            matched_career = career_id
-            confidence = 0.95
-            reason = f"Matched by deterministic keyword rules for {CAREERS[career_id]['name']}."
-            break
+DOMAIN_TAXONOMY = {
+    "technology": ["technology", "software engineering", "software"],
+    "software_engineering": ["software engineering", "software", "application development"],
+    "backend": ["backend", "backend engineering", "api development"],
+    "frontend": ["frontend", "ui engineering", "web frontend"],
+    "data_analytics": ["data analytics", "analytics", "business intelligence"],
+    "data_science": ["data science", "statistics", "predictive modeling"],
+    "artificial_intelligence": ["artificial intelligence", "ai", "llm", "rag"],
+    "machine_learning": ["machine learning", "ml", "predictive modeling"],
+    "cloud": ["cloud", "cloud computing", "cloud engineering"],
+    "devops": ["devops", "deployment", "ci/cd"],
+    "cybersecurity": ["cybersecurity", "security", "network security"],
+    "blockchain": ["blockchain", "distributed ledger"],
+    "iot": ["iot", "internet of things", "connected devices"],
+    "robotics": ["robotics", "robotic process automation", "automation bots"],
+    "rpa": ["rpa", "robotic process automation", "automation"],
+    "databases": ["sql", "database", "postgresql"],
+    "testing": ["testing", "qa", "quality assurance"],
+    "mobile": ["mobile", "android", "ios"],
+    "healthcare_technology": ["healthcare technology", "hospital software", "medical software"],
+}
 
-    if not matched_career:
-        q_tokens = q.replace("-", " ").replace("/", " ").split()
-        if any(token in q for token in ["data", "analytics", "analyst", "analysis", "science", "statistics", "bi"]):
-            close_match = get_close_matches(q, data_intent_phrases, n=1, cutoff=0.72)
-            if close_match or any(phrase in q for phrase in ["data", "analytics", "analyst", "analysis", "science", "statistics", "bi"]):
-                matched_career = "data_scientist"
-                confidence = 0.9
-                reason = "Matched to the data scientist path using data-career intent and typo-tolerant matching."
-                extracted_skills = ["SQL", "Statistics", "Pandas", "Visualization"]
+COMPETENCY_BLUEPRINTS = {
+    "data_analytics": {
+        "label": "Data Analytics",
+        "skills": ["python", "sql_basics", "numpy_pandas", "data_visualization", "data_warehousing"],
+        "missing": [],
+    },
+    "data_science": {
+        "label": "Data Science",
+        "skills": ["python", "sql_basics", "numpy_pandas", "math_statistics", "machine_learning_basics", "model_evaluation"],
+        "missing": [],
+    },
+    "cloud": {
+        "label": "Cloud Computing",
+        "skills": ["git", "python", "docker", "cloud_deployment", "fastapi"],
+        "missing": ["cloud_fundamentals", "cloud_services"],
+    },
+    "cybersecurity": {
+        "label": "Cybersecurity",
+        "skills": ["python", "fastapi", "auth_security", "monitoring"],
+        "missing": ["networking", "linux", "security_fundamentals", "web_security", "incident_response"],
+    },
+    "devops": {
+        "label": "DevOps",
+        "skills": ["git", "python", "docker", "cloud_deployment", "monitoring"],
+        "missing": ["linux", "networking", "ci_cd", "infrastructure"],
+    },
+    "blockchain": {
+        "label": "Blockchain",
+        "skills": ["python", "git"],
+        "missing": ["cryptography", "blockchain_fundamentals", "smart_contracts", "distributed_systems"],
+    },
+    "iot": {
+        "label": "IoT",
+        "skills": ["python", "git", "networking"],
+        "missing": ["embedded_systems", "sensors", "iot_protocols", "data_processing"],
+    },
+    "rpa": {
+        "label": "RPA",
+        "skills": ["python", "git"],
+        "missing": ["workflow_automation", "process_design", "rpa_tools"],
+    },
+    "artificial_intelligence": {
+        "label": "Artificial Intelligence",
+        "skills": ["python", "numpy_pandas", "math_statistics", "machine_learning_basics", "ai_apis", "rag"],
+        "missing": [],
+    },
+    "backend": {
+        "label": "Backend Engineering",
+        "skills": ["python", "fastapi", "sql_basics", "postgresql", "auth_security", "docker"],
+        "missing": [],
+    },
+    "robotics": {
+        "label": "Robotics",
+        "skills": ["python"],
+        "missing": ["robotics_fundamentals", "embedded_systems", "control_systems"],
+    },
+    "healthcare_technology": {
+        "label": "Healthcare Technology",
+        "skills": ["python", "sql_basics", "numpy_pandas", "fastapi"],
+        "missing": ["healthcare_domain_knowledge"],
+    },
+    "cloud_security_engineer": {
+        "label": "Cloud Security",
+        "skills": ["networking", "linux", "cloud_fundamentals", "cloud_architecture", "cloud_deployment", "containers", "security_fundamentals", "auth_security", "web_security", "security_monitoring", "incident_response"],
+        "missing": ["cloud_fundamentals", "cloud_architecture", "security_fundamentals", "security_monitoring", "incident_response"],
+    },
+    "blockchain_security_engineer": {
+        "label": "Blockchain Security",
+        "skills": ["python", "git", "blockchain_fundamentals", "cryptography", "distributed_systems", "smart_contracts", "blockchain_security", "security_fundamentals"],
+        "missing": ["cryptography", "blockchain_fundamentals", "distributed_systems", "smart_contracts", "blockchain_security", "security_fundamentals"],
+    },
+    "robotics_ai_engineer": {
+        "label": "Robotics AI",
+        "skills": ["python", "robotics_fundamentals", "embedded_systems", "control_systems", "numpy_pandas", "math_statistics", "machine_learning_basics", "ai_apis"],
+        "missing": ["robotics_fundamentals", "embedded_systems", "control_systems"],
+    },
+    "medical_ai_engineer": {
+        "label": "Medical AI",
+        "skills": ["numpy_pandas", "math_statistics", "machine_learning_basics", "ai_apis", "rag", "fastapi"],
+        "missing": ["healthcare_domain_knowledge"],
+    },
+}
 
-    if matched_career == "ai_engineer" and any(token in q for token in ["medical", "healthcare", "hospital", "clinical"]):
-        support_level = "partial"
-        confidence = max(confidence, 0.88)
-        reason = "The goal combines healthcare and AI. PathMind can support the technology side, not clinical medicine."
-        extracted_skills = ["Prompt Engineering", "LLMs", "RAG"]
-        related_supported_roles = ["ai_engineer", "data_scientist", "backend_ai_developer"]
-    elif matched_career == "backend_ai_developer":
-        extracted_skills = ["Python", "FastAPI", "SQL", "AI APIs"]
-    elif matched_career == "ml_engineer":
-        extracted_skills = ["Python", "NumPy", "Pandas", "Machine Learning"]
-    elif matched_career == "data_scientist":
-        extracted_skills = ["SQL", "Statistics", "Pandas", "Visualization"]
-    elif matched_career == "full_stack_developer":
-        extracted_skills = ["React", "Next.js", "REST APIs", "SQL"]
+DOMAIN_PRIORITY = [
+    "cloud",
+    "cybersecurity",
+    "blockchain",
+    "iot",
+    "rpa",
+    "devops",
+    "healthcare_technology",
+    "robotics",
+    "artificial_intelligence",
+    "machine_learning",
+    "data_science",
+    "data_analytics",
+    "backend",
+    "frontend",
+    "databases",
+    "testing",
+    "mobile",
+    "software_engineering",
+    "technology",
+]
 
-    if not matched_career and any(token in q for token in ["doctor", "medicine", "surgeon", "nurse", "clinical"]):
+
+def normalize_goal(query: str) -> str:
+    text = query.strip().lower()
+    text = re.sub(r"[^\w\s+/-]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = text.replace("i wanna", "i want to")
+    text = text.replace("i’d like", "i want to")
+    text = text.replace("id like", "i want to")
+    text = text.replace("become a", "")
+    text = text.replace("become an", "")
+    text = text.replace("career in", "")
+    text = text.replace("how can i", "")
+    text = text.replace("how do i", "")
+    text = text.replace("how to", "")
+    return text.strip()
+
+
+def _goal_has_term(text: str, term: str) -> bool:
+    pattern = re.escape(term).replace(r"\ ", r"\s+")
+    return re.search(rf"(?<!\w){pattern}(?!\w)", text) is not None
+
+
+def classify_goal_deterministically(normalized_query: str) -> tuple[Optional[str], float, str, str, List[str], List[str]]:
+    q = normalized_query
+    if _goal_has_term(q, "blockchain") and _goal_has_term(q, "security"):
+        return None, 0.94, "partial", "Matched as blockchain security, a composed competency goal.", [], ["blockchain", "cybersecurity"]
+    if _goal_has_term(q, "cloud") and _goal_has_term(q, "security"):
+        return None, 0.95, "partial", "Matched as cloud security, a composed competency goal.", [], ["cloud", "cybersecurity"]
+    if _goal_has_term(q, "medical") and _goal_has_term(q, "ai"):
+        return None, 0.88, "partial", "Matched as medical AI, a healthcare technology goal.", [], ["healthcare_technology", "artificial_intelligence"]
+    if (_goal_has_term(q, "robotics") or _goal_has_term(q, "robotic")) and _goal_has_term(q, "ai"):
+        return None, 0.93, "partial", "Matched as robotics AI, a composed competency goal.", [], ["robotics", "artificial_intelligence"]
+    if _goal_has_term(q, "cloud") and not _goal_has_term(q, "ai"):
+        return None, 0.97, "partial", "Matched as cloud computing, a cloud competency goal.", [], ["cloud"]
+    if _goal_has_term(q, "blockchain"):
+        return None, 0.96, "partial", "Matched as blockchain, a blockchain competency goal.", [], ["blockchain"]
+    if _goal_has_term(q, "cybersecurity"):
+        return None, 0.96, "partial", "Matched as cybersecurity, a cybersecurity competency goal.", [], ["cybersecurity"]
+    if _goal_has_term(q, "devops"):
+        return None, 0.95, "partial", "Matched as DevOps, an operations competency goal.", [], ["devops"]
+    if _goal_has_term(q, "iot") or _goal_has_term(q, "internet of things"):
+        return None, 0.95, "partial", "Matched as IoT, a connected-systems competency goal.", [], ["iot"]
+    if _goal_has_term(q, "rpa") or (_goal_has_term(q, "software") and _goal_has_term(q, "bots")):
+        return None, 0.94, "partial", "Matched as RPA, an automation competency goal.", [], ["rpa"]
+
+    matches: List[str] = []
+    for career_id, aliases in GOAL_ALIASES.items():
+        if any(_goal_has_term(q, alias) for alias in aliases):
+            matches.append(career_id)
+
+    if matches and "ai_engineer" in matches and _goal_has_term(q, "medical"):
+        return None, 0.88, "partial", "Matched as medical AI, a healthcare technology goal.", [], ["healthcare_technology", "artificial_intelligence"]
+
+    if "doctor" in q or "medicine" in q or "surgeon" in q or "nurse" in q:
+        return None, 0.99, "outside_scope", "clinical medicine is outside PathMind's supported technology learning scope.", [], ["healthcare"]
+
+    if "hospital software" in q or "healthcare data" in q or "medical software" in q:
+        return "data_scientist" if "data" in q else "backend_ai_developer", 0.94, "partial", "The goal is supported as healthcare technology rather than clinical medicine.", ["healthcare_technology"], ["healthcare_technology"]
+
+    if matches:
+        career_id = matches[0]
+        if career_id == "data_scientist":
+            return career_id, 0.98, "supported", "Matched to the data science and analytics learning path.", ["data_scientist"], ["data_science", "data_analytics"]
+        if career_id == "ai_engineer" and "medical" in q:
+            return career_id, 0.88, "partial", "The goal combines healthcare and AI. PathMind can support the technology side only.", ["ai_engineer", "data_scientist"], ["healthcare_technology", "artificial_intelligence"]
+        return career_id, 0.93, "supported", f"Matched to the {CAREERS[career_id]['name']} blueprint.", [career_id], [career_id]
+
+    if any(_goal_has_term(q, token) for token in ["cloud", "cybersecurity", "blockchain", "iot", "rpa", "devops", "analytics", "data", "ai", "ml"]):
+        if _goal_has_term(q, "analytics") or _goal_has_term(q, "data"):
+            return "data_scientist", 0.85, "supported", "Matched by semantic analytics intent.", ["data_scientist"], ["data_analytics"]
+        domain_matches = []
+        for domain_key in DOMAIN_PRIORITY:
+            phrases = DOMAIN_TAXONOMY.get(domain_key, [])
+            if any(_goal_has_term(q, phrase) for phrase in phrases):
+                domain_matches.append(domain_key)
+        if domain_matches:
+            primary = domain_matches[0]
+            label = COMPETENCY_BLUEPRINTS.get(primary, {}).get("label", primary.replace("_", " ").title())
+            return None, 0.82, "partial" if primary in COMPETENCY_BLUEPRINTS and COMPETENCY_BLUEPRINTS[primary]["missing"] else "supported", f"Matched by semantic domain understanding for {label}.", [], domain_matches
+        return None, 0.0, "outside_scope", "The goal is technology-related but needs semantic resolution.", [], []
+
+    return None, 0.0, "outside_scope", "The goal could not be confidently mapped to a supported blueprint.", [], []
+
+
+def _extract_json_payload(text: str) -> str:
+    if not text:
+        return ""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?", "", stripped, flags=re.IGNORECASE).strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        return stripped[start : end + 1]
+    return stripped
+
+
+def _build_competency_goal_analysis(
+    query: str,
+    domain_key: str,
+    *,
+    support_level: str,
+    confidence: float,
+    reason: str,
+    domains: Optional[List[str]] = None,
+    related_supported_roles: Optional[List[str]] = None,
+    clarification_question: str = "",
+) -> GoalAnalysis:
+    composed_domains = domains[:] if domains else [domain_key]
+    existing_skills: List[str] = []
+    missing_skills: List[str] = []
+    for item in composed_domains:
+        blueprint = COMPETENCY_BLUEPRINTS.get(item)
+        if not blueprint:
+            continue
+        existing_skills.extend([skill for skill in blueprint["skills"] if skill in SKILL_GRAPH])
+        missing_skills.extend([skill for skill in blueprint["missing"] if skill not in SKILL_GRAPH])
+    existing_skills = list(dict.fromkeys(existing_skills))
+    missing_skills = list(dict.fromkeys(missing_skills))
+    primary_blueprint = COMPETENCY_BLUEPRINTS[domain_key]
+    support = support_level
+    if missing_skills and support_level == "supported":
+        support = "partial"
+        if not reason:
+            reason = f"{primary_blueprint['label']} is partially supported because {', '.join(missing_skills)} is not yet present in the skill library."
+    elif not reason:
+        reason = f"Matched to the {primary_blueprint['label']} competency blueprint."
+    career_title = " + ".join(COMPETENCY_BLUEPRINTS[item]["label"] for item in composed_domains if item in COMPETENCY_BLUEPRINTS)
+    return GoalAnalysis(
+        goal=query.strip(),
+        careerTitle=career_title,
+        description=reason,
+        requiredSkills=existing_skills,
+        estimatedDuration="",
+        readiness=0,
+        matched_career_id=None,
+        support_level=support,
+        domain=composed_domains[0] if composed_domains else domain_key,
+        specialization=" + ".join(COMPETENCY_BLUEPRINTS[item]["label"] for item in composed_domains if item in COMPETENCY_BLUEPRINTS).lower(),
+        confidence=confidence,
+        reason=reason,
+        is_ambiguous=False,
+        clarification_question=clarification_question,
+        normalized_name=career_title,
+        extracted_skills=existing_skills[:4],
+        target_outcome=f"Build toward {career_title or primary_blueprint['label']} using supported competencies.",
+        related_supported_roles=related_supported_roles or [domain_key],
+        competencies=composed_domains,
+    )
+
+
+def _parse_goal_classification(payload: str) -> Optional[GoalClassification]:
+    try:
+        data = json.loads(_extract_json_payload(payload))
+    except Exception:
+        return None
+    try:
+        classification = GoalClassification.model_validate(data)
+        if not classification.target_role:
+            return None
+        return classification
+    except Exception:
+        return None
+
+
+def gemini_semantic_goal_classify(query: str, normalized_query: str) -> Optional[GoalClassification]:
+    client = get_gemini_client()
+    if not client:
+        return None
+    prompt = f"""
+You are PathMind's semantic career-goal classifier.
+
+Interpret the learner's natural-language goal.
+Identify:
+* target role
+* domain
+* specialization
+* confidence
+* supported/partial/outside scope
+* reason
+* related supported roles
+
+Do not generate a roadmap.
+Do not invent prerequisites.
+Do not assign learner mastery.
+Do not create clinical medical curricula.
+For interdisciplinary goals, identify all relevant technology domains.
+Return only valid JSON matching the schema.
+
+User goal: {query}
+Normalized goal: {normalized_query}
+
+Schema:
+{{
+  "target_role": "string",
+  "domain": "string",
+  "specialization": "string or null",
+  "confidence": 0.0,
+  "support_level": "supported|partial|outside_scope",
+  "reason": "string",
+  "clarification_question": "string or null",
+  "related_supported_roles": ["string"],
+  "domains": ["string"],
+  "normalized_goal": "string",
+  "intermediate_intent": "string"
+}}
+""".strip()
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        classification = _parse_goal_classification(getattr(response, "text", "") or "")
+        if classification:
+            return classification
+    except Exception:
+        return None
+    return None
+
+
+def classify_goal(query: str) -> GoalAnalysis:
+    normalized = normalize_goal(query)
+    if _goal_has_term(normalized, "blockchain") and not _goal_has_term(normalized, "security"):
+        return build_goal_analysis(
+            query.strip(),
+            "blockchain_engineer",
+            support_level="partial",
+            confidence=0.96,
+            reason="Matched as blockchain, a blockchain competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["cybersecurity_engineer"],
+        )
+    if _goal_has_term(normalized, "cloud") and _goal_has_term(normalized, "security"):
+        result = build_goal_analysis(
+            query.strip(),
+            "cloud_security_engineer",
+            support_level="partial",
+            confidence=0.95,
+            reason="Matched as cloud security, a composed competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["cloud_engineer", "cybersecurity_engineer"],
+        )
+        result.competencies = ["cloud", "cybersecurity"]
+        result.careerTitle = "Cloud Computing + Cybersecurity"
+        result.domain = "cloud"
+        result.specialization = "cloud + cybersecurity"
+        result.requiredSkills = [skill for skill in COMPETENCY_BLUEPRINTS["cloud_security_engineer"]["skills"] if skill in SKILL_GRAPH]
+        result.target_outcome = "Build toward Cloud Computing + Cybersecurity using supported competencies."
+        return result
+    if _goal_has_term(normalized, "cloud") and not _goal_has_term(normalized, "ai"):
+        return build_goal_analysis(
+            query.strip(),
+            "cloud_engineer",
+            support_level="partial",
+            confidence=0.97,
+            reason="Matched as cloud computing, a cloud competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["devops_engineer", "backend_ai_developer"],
+        )
+    if _goal_has_term(normalized, "cybersecurity") and not _goal_has_term(normalized, "cloud"):
+        return build_goal_analysis(
+            query.strip(),
+            "cybersecurity_engineer",
+            support_level="partial",
+            confidence=0.96,
+            reason="Matched as cybersecurity, a cybersecurity competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["cloud_engineer", "devops_engineer"],
+        )
+    if _goal_has_term(normalized, "devops"):
+        return build_goal_analysis(
+            query.strip(),
+            "devops_engineer",
+            support_level="partial",
+            confidence=0.95,
+            reason="Matched as DevOps, an operations competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["cloud_engineer", "backend_ai_developer"],
+        )
+    if _goal_has_term(normalized, "iot") or _goal_has_term(normalized, "internet of things"):
+        return build_goal_analysis(
+            query.strip(),
+            "iot_engineer",
+            support_level="partial",
+            confidence=0.95,
+            reason="Matched as IoT, a connected-systems competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["cloud_engineer"],
+        )
+    if _goal_has_term(normalized, "rpa") or (_goal_has_term(normalized, "software") and _goal_has_term(normalized, "bots")):
+        return build_goal_analysis(
+            query.strip(),
+            "rpa_developer",
+            support_level="partial",
+            confidence=0.94,
+            reason="Matched as RPA, an automation competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["backend_ai_developer"],
+        )
+    if (_goal_has_term(normalized, "robotics") or _goal_has_term(normalized, "robotic")) and _goal_has_term(normalized, "ai"):
+        result = build_goal_analysis(
+            query.strip(),
+            "robotics_ai_engineer",
+            support_level="partial",
+            confidence=0.93,
+            reason="Matched as robotics AI, a composed competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["robotics_engineer", "ai_engineer"],
+        )
+        result.competencies = ["robotics", "artificial_intelligence"]
+        result.careerTitle = "Robotics + Artificial Intelligence"
+        result.domain = "robotics"
+        result.specialization = "robotics + artificial intelligence"
+        result.requiredSkills = [skill for skill in COMPETENCY_BLUEPRINTS["robotics_ai_engineer"]["skills"] if skill in SKILL_GRAPH]
+        result.target_outcome = "Build toward Robotics + Artificial Intelligence using supported competencies."
+        return result
+    if _goal_has_term(normalized, "blockchain") and _goal_has_term(normalized, "security"):
+        result = build_goal_analysis(
+            query.strip(),
+            "blockchain_security_engineer",
+            support_level="partial",
+            confidence=0.94,
+            reason="Matched as blockchain security, a composed competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["blockchain_engineer", "cybersecurity_engineer"],
+        )
+        result.competencies = ["blockchain", "cybersecurity"]
+        result.careerTitle = "Blockchain + Cybersecurity"
+        result.domain = "blockchain"
+        result.specialization = "blockchain + cybersecurity"
+        result.requiredSkills = [skill for skill in COMPETENCY_BLUEPRINTS["blockchain_security_engineer"]["skills"] if skill in SKILL_GRAPH]
+        result.target_outcome = "Build toward Blockchain + Cybersecurity using supported competencies."
+        return result
+    if (_goal_has_term(normalized, "robotics") or _goal_has_term(normalized, "robotic")) and _goal_has_term(normalized, "ai"):
+        result = build_goal_analysis(
+            query.strip(),
+            "robotics_ai_engineer",
+            support_level="partial",
+            confidence=0.93,
+            reason="Matched as robotics AI, a composed competency goal.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["robotics_engineer", "ai_engineer"],
+        )
+        result.competencies = ["robotics", "artificial_intelligence"]
+        result.careerTitle = "Robotics + Artificial Intelligence"
+        result.domain = "robotics"
+        result.specialization = "robotics + artificial intelligence"
+        result.requiredSkills = [skill for skill in COMPETENCY_BLUEPRINTS["robotics_ai_engineer"]["skills"] if skill in SKILL_GRAPH]
+        result.target_outcome = "Build toward Robotics + Artificial Intelligence using supported competencies."
+        return result
+    if _goal_has_term(normalized, "medical") and _goal_has_term(normalized, "ai"):
+        result = build_goal_analysis(
+            query.strip(),
+            "ai_engineer",
+            support_level="partial",
+            confidence=0.88,
+            reason="The goal combines healthcare and AI. PathMind can support the technology side only.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["ai_engineer", "data_scientist"],
+        )
+        result.careerTitle = "Artificial Intelligence + Healthcare Technology"
+        result.domain = "artificial_intelligence"
+        result.specialization = "artificial intelligence + healthcare technology"
+        result.competencies = ["artificial_intelligence", "healthcare_technology"]
+        result.requiredSkills = [skill for skill in COMPETENCY_BLUEPRINTS["medical_ai_engineer"]["skills"] if skill in SKILL_GRAPH]
+        result.target_outcome = "Build toward Artificial Intelligence + Healthcare Technology using supported competencies."
+        return result
+    if _goal_has_term(normalized, "cloud") and _goal_has_term(normalized, "ai"):
+        return _build_competency_goal_analysis(
+            query,
+            "cloud_security_engineer" if _goal_has_term(normalized, "security") else "cloud_engineer",
+            support_level="partial",
+            confidence=0.95,
+            reason="Matched as cloud AI, a composed competency goal.",
+            domains=["cloud", "artificial_intelligence"],
+            related_supported_roles=[],
+        )
+    if _goal_has_term(normalized, "ai") and _goal_has_term(normalized, "backend"):
+        return build_goal_analysis(
+            query.strip(),
+            "backend_ai_developer",
+            support_level="supported",
+            confidence=0.96,
+            reason="Matched as an AI backend developer blueprint.",
+            is_ambiguous=False,
+            clarification_question="",
+            related_supported_roles=["ai_engineer", "backend_ai_developer"],
+        )
+    career_id, confidence, support_level, reason, related_supported_roles, domains = classify_goal_deterministically(normalized)
+    domain_keys = []
+    for key, phrases in DOMAIN_TAXONOMY.items():
+        if any(phrase in normalized for phrase in phrases):
+            domain_keys.append(key)
+    if not domain_keys and "data" in normalized:
+        domain_keys.append("data_analytics")
+
+    if career_id is None:
+        gemini_result = gemini_semantic_goal_classify(query, normalized)
+        if gemini_result and gemini_result.confidence >= 0:
+            career_id = gemini_result.target_role if gemini_result.target_role in CAREERS else None
+            support_level = gemini_result.support_level
+            confidence = gemini_result.confidence
+            reason = gemini_result.reason
+            related_supported_roles = [role for role in gemini_result.related_supported_roles if role in CAREERS]
+            domains = gemini_result.domains or [gemini_result.domain] if gemini_result.domain else []
+            if career_id == "ai_engineer" and _goal_has_term(normalized, "medical"):
+                support_level = "partial"
+                confidence = max(confidence, 0.88)
+                reason = "The goal combines healthcare and AI. PathMind can support the technology side only."
+                related_supported_roles = ["ai_engineer", "data_scientist"]
+            if career_id:
+                result = build_goal_analysis(
+                    query.strip(),
+                    career_id,
+                    support_level=support_level,
+                    confidence=confidence,
+                    reason=reason,
+                    is_ambiguous=False,
+                    clarification_question=gemini_result.clarification_question or "",
+                    related_supported_roles=related_supported_roles,
+                )
+                result.normalized_name = gemini_result.normalized_goal or result.normalized_name
+                result.extracted_skills = []
+                return result
+            if domains:
+                resolved_domain = domains[0]
+                if resolved_domain in COMPETENCY_BLUEPRINTS:
+                    return _build_competency_goal_analysis(
+                        query,
+                        resolved_domain,
+                        support_level="partial" if support_level == "outside_scope" else support_level,
+                        confidence=confidence,
+                        reason=reason,
+                        domains=domains,
+                        related_supported_roles=related_supported_roles,
+                        clarification_question=gemini_result.clarification_question or "",
+                    )
+
+        if "doctor" in normalized or "medicine" in normalized or "clinical" in normalized:
+            return GoalAnalysis(
+                goal=query.strip(),
+                careerTitle="",
+                description="Medicine is outside PathMind's current supported learning domain.",
+                requiredSkills=[],
+                estimatedDuration="",
+                readiness=0,
+                matched_career_id=None,
+                support_level="outside_scope",
+                domain="healthcare",
+                specialization="clinical medicine",
+                confidence=0.99,
+                reason="Clinical medicine is outside PathMind's current supported technology learning scope.",
+                is_ambiguous=False,
+                clarification_question="",
+                normalized_name=normalized,
+                extracted_skills=[],
+                target_outcome="PathMind focuses on technology, AI, software, data, and related digital careers.",
+                related_supported_roles=[],
+            )
+
+        if domain_keys:
+            if _goal_has_term(normalized, "medical") and _goal_has_term(normalized, "ai"):
+                return build_goal_analysis(
+                    query.strip(),
+                    "ai_engineer",
+                    support_level="partial",
+                    confidence=max(confidence, 0.88),
+                    reason="The goal combines healthcare and AI. PathMind can support the technology side only.",
+                    is_ambiguous=False,
+                    clarification_question="",
+                    related_supported_roles=["ai_engineer", "data_scientist"],
+                )
+            if "healthcare_technology" in domain_keys:
+                return _build_competency_goal_analysis(
+                    query,
+                    "healthcare_technology",
+                    support_level="partial",
+                    confidence=max(confidence, 0.9),
+                    reason="The goal combines healthcare technology with supported software/data competencies.",
+                    domains=domain_keys,
+                    related_supported_roles=["data_scientist", "backend_ai_developer", "ai_engineer"],
+                )
+            if "cybersecurity" in domain_keys and "cloud" in domain_keys:
+                return _build_competency_goal_analysis(
+                    query,
+                    "cybersecurity",
+                    support_level="partial",
+                    confidence=max(confidence, 0.95),
+                    reason="Cloud security is partially supported through cloud, backend, and authentication competencies, but dedicated security skills are still missing.",
+                    domains=["cloud", "cybersecurity"],
+                    related_supported_roles=["backend_ai_developer"],
+                )
+            if "blockchain" in domain_keys and "cybersecurity" in domain_keys:
+                return _build_competency_goal_analysis(
+                    query,
+                    "blockchain",
+                    support_level="partial",
+                    confidence=max(confidence, 0.94),
+                    reason="Blockchain security is partially supported through programming foundations, but dedicated blockchain and security competencies are missing.",
+                    domains=["blockchain", "cybersecurity"],
+                    related_supported_roles=["backend_ai_developer"],
+                )
+            if "iot" in domain_keys and "artificial_intelligence" in domain_keys:
+                return _build_competency_goal_analysis(
+                    query,
+                    "iot",
+                    support_level="partial",
+                    confidence=max(confidence, 0.92),
+                    reason="Robotics and connected-device goals are only partially supported by the current skill library.",
+                    domains=["iot", "artificial_intelligence"],
+                    related_supported_roles=["ai_engineer", "backend_ai_developer"],
+                )
+            primary_domain = domain_keys[0]
+            if primary_domain in COMPETENCY_BLUEPRINTS:
+                support_hint = "partial" if COMPETENCY_BLUEPRINTS[primary_domain]["missing"] else "supported"
+                return _build_competency_goal_analysis(
+                    query,
+                    primary_domain,
+                    support_level=support_hint,
+                    confidence=max(confidence, 0.9 if support_hint == "supported" else 0.85),
+                    reason=reason or f"Matched to the {COMPETENCY_BLUEPRINTS[primary_domain]['label']} competency blueprint.",
+                    domains=domain_keys,
+                    related_supported_roles=related_supported_roles or [primary_domain],
+                )
+
         return GoalAnalysis(
             goal=query.strip(),
             careerTitle="",
-            description="Medicine is outside PathMind's current supported learning domain.",
+            description="",
             requiredSkills=[],
             estimatedDuration="",
             readiness=0,
             matched_career_id=None,
-            support_level="outside_scope",
-            domain="healthcare",
-            specialization="clinical medicine",
-            confidence=0.92,
-            reason="Clinical medicine is outside PathMind's current supported technology learning scope.",
-            is_ambiguous=False,
-            clarification_question="",
-            normalized_name="",
+            support_level="partial" if any(token in normalized for token in ["health", "hospital"]) else "outside_scope",
+            domain="technology",
+            specialization="",
+            confidence=0.35,
+            reason="The goal could not be confidently mapped to a supported blueprint.",
+            is_ambiguous=True,
+            clarification_question="Tell me which technology career path you want to pursue.",
+            normalized_name=normalized,
             extracted_skills=[],
-            target_outcome="PathMind focuses on technology, AI, software, data, and related digital careers.",
-            related_supported_roles=["data_scientist", "ai_engineer", "backend_ai_developer"],
+            target_outcome="",
+            related_supported_roles=["backend_ai_developer", "ai_engineer", "data_scientist", "ml_engineer", "full_stack_developer"],
         )
 
-    client = get_gemini_client()
-    if client and not matched_career:
-        try:
-            prompt = f"""
-Analyze this learning goal query: "{query}"
-Classify it into one supported career blueprint if possible.
-Prefer the data_scientist blueprint when the user is asking for analytics, BI, data analysis, or data science work.
-Return JSON with keys:
-- matched_career_id
-- support_level
-- is_ambiguous
-- clarification_question
-- normalized_name
-- extracted_skills
-- target_outcome
-- reason
-- related_supported_roles
-"""
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
-            )
-            data = json.loads(response.text or "{}")
-            ai_career_id = data.get("matched_career_id")
-            if ai_career_id in CAREERS and not data.get("is_ambiguous", False):
-                result = build_goal_analysis(
-                    query.strip(),
-                    ai_career_id,
-                    support_level=str(data.get("support_level") or "supported"),
-                    confidence=float(data.get("confidence") or 0.7),
-                    reason=str(data.get("reason") or ""),
-                    is_ambiguous=bool(data.get("is_ambiguous", False)),
-                    clarification_question=str(data.get("clarification_question") or ""),
-                    related_supported_roles=[role for role in data.get("related_supported_roles", []) if role in CAREERS],
-                )
-                result.extracted_skills = [str(item) for item in data.get("extracted_skills", []) if str(item).strip()]
-                return result
-        except Exception:
-            pass
-
-    if matched_career:
+    if career_id in CAREERS:
+        if career_id == "ai_engineer" and _goal_has_term(normalized, "medical"):
+            support_level = "partial"
+            confidence = max(confidence, 0.88)
+            reason = "The goal combines healthcare and AI. PathMind can support the technology side only."
+            related_supported_roles = ["ai_engineer", "data_scientist"]
         result = build_goal_analysis(
             query.strip(),
-            matched_career,
+            career_id,
             support_level=support_level,
-            confidence=confidence,
+            confidence=max(confidence, DETERMINISTIC_CONFIDENCE_THRESHOLD if confidence >= DETERMINISTIC_CONFIDENCE_THRESHOLD else confidence),
             reason=reason,
-            is_ambiguous=is_ambiguous,
-            clarification_question=clarification_question,
+            is_ambiguous=False,
+            clarification_question="",
             related_supported_roles=related_supported_roles,
         )
-        result.extracted_skills = extracted_skills
+        result.normalized_name = normalized
+        result.extracted_skills = []
+        if domains:
+            result.domain = domains[0]
+        if len(domains) > 1:
+            result.related_supported_roles = sorted(set(result.related_supported_roles + related_supported_roles))
         return result
+
+    if domain_keys:
+        primary_domain = domain_keys[0]
+        if primary_domain in COMPETENCY_BLUEPRINTS:
+            return _build_competency_goal_analysis(
+                query,
+                primary_domain,
+                support_level="partial" if COMPETENCY_BLUEPRINTS[primary_domain]["missing"] else support_level,
+                confidence=max(confidence, 0.9),
+                reason=reason,
+                domains=domain_keys,
+                related_supported_roles=related_supported_roles,
+            )
 
     return GoalAnalysis(
         goal=query.strip(),
@@ -1608,14 +2708,14 @@ Return JSON with keys:
         estimatedDuration="",
         readiness=0,
         matched_career_id=None,
-        support_level="partial" if "health" in q or "hospital" in q else "outside_scope",
+        support_level="outside_scope",
         domain="technology",
         specialization="",
         confidence=0.35,
         reason="The goal could not be confidently mapped to a supported blueprint.",
         is_ambiguous=True,
         clarification_question="Tell me which technology career path you want to pursue.",
-        normalized_name="",
+        normalized_name=normalized,
         extracted_skills=[],
         target_outcome="",
         related_supported_roles=["backend_ai_developer", "ai_engineer", "data_scientist", "ml_engineer", "full_stack_developer"],
@@ -1843,12 +2943,63 @@ def resources_summary(request: ResourceProjectRequest):
             "title": skill.name,
             "status": skill.status,
             "proficiency": proficiency,
-            "project": select_adaptive_project(skill.id, proficiency, SKILL_GRAPH),
+            "project": build_project_blueprint(skill.id, proficiency, SKILL_GRAPH, interest=request.interest),
         })
     return {
         "career": career["name"],
         "resources": resources_by_skill,
         "projects": projects_by_skill,
+    }
+
+
+class ProjectStartRequest(BaseModel):
+    target_role: str
+    skill_id: str
+    proficiency: int = Field(default=0, ge=0, le=100)
+    current_skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    interest: str = ""
+
+
+@app.post("/api/project/start")
+def start_project(request: ProjectStartRequest):
+    """Start a deterministic project session with milestones and build guidance."""
+    if request.target_role not in CAREERS:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    if request.skill_id not in SKILL_GRAPH:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+    session = build_project_session(request.skill_id, request.proficiency, SKILL_GRAPH, interest=request.interest)
+    return {
+        "target_role": request.target_role,
+        "skill_id": request.skill_id,
+        "session": session,
+        "project": session["project"],
+        "current_milestone": session["currentMilestone"],
+        "next_milestone": session["nextMilestone"],
+    }
+
+
+@app.post("/api/project/next")
+def next_project_milestone(request: ProjectStartRequest):
+    """Return the current and next milestone for a project."""
+    if request.target_role not in CAREERS:
+        raise HTTPException(status_code=404, detail="Career track not found.")
+    if request.skill_id not in SKILL_GRAPH:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+    session = build_project_session(request.skill_id, request.proficiency, SKILL_GRAPH, interest=request.interest)
+    milestones = session["milestones"]
+    current = next((item for item in milestones if item.get("completion_status") != "completed"), None)
+    upcoming = None
+    if current:
+        current_index = milestones.index(current)
+        if current_index + 1 < len(milestones):
+            upcoming = milestones[current_index + 1]
+    return {
+        "target_role": request.target_role,
+        "skill_id": request.skill_id,
+        "current_milestone": current,
+        "next_milestone": upcoming,
+        "project": session["project"],
+        "build_guide": session["buildGuide"],
     }
 
 
@@ -2378,13 +3529,25 @@ def chat_assistant(request: ChatRequest):
             skip_requested = "skip" in request.message.lower()
             if skip_requested:
                 return {"response": f"Not recommended yet.\n\n{request.current_skill or 'This skill'} is still part of your current path. Use the verification assessment or complete the prerequisite steps before skipping it.\n\nIf you want, I can explain the specific blocker and the fastest safe verification path."}
-            return {"response": f"I’m having trouble reaching the AI service right now. Based on your current context for **{career_name}**, the safest next step is **{request.next_action or 'your next roadmap item'}**."}
+            current_step = None
+            if isinstance(request.project_blueprint, dict):
+                steps = request.project_blueprint.get("implementationTasks") or []
+                if steps:
+                    current_step = steps[0]
+            project_name = request.project_blueprint.get("whatYouAreBuilding") if isinstance(request.project_blueprint, dict) else None
+            return {"response": f"I’m having trouble reaching the AI service right now. Based on your current context for **{career_name}** and **{project_name or request.current_milestone or 'your current project'}**, the safest next step is **{current_step or request.next_action or 'your next roadmap item'}**."}
             
     # Simple Static Fallback
     if "skip" in request.message.lower():
         return {
             "response": f"Not recommended yet.\n\n{request.current_skill or 'This skill'} is still part of your current path. You can either complete it or take a verification assessment before we consider skipping it."
         }
+    project_name = request.project_blueprint.get("whatYouAreBuilding") if isinstance(request.project_blueprint, dict) else None
+    current_step = None
+    if isinstance(request.project_blueprint, dict):
+        steps = request.project_blueprint.get("implementationTasks") or []
+        if steps:
+            current_step = steps[0]
     return {
-        "response": f"Hello! As your AI Learning Coach for **{career_name}**, I’m here to guide your next step. Your current best action is **{request.next_action or 'study the next roadmap item'}**."
+        "response": f"Hello! As your AI Learning Coach for **{career_name}**, I’m here to guide your next step in **{project_name or request.current_milestone or 'your current project'}**. Your current best action is **{current_step or request.next_action or 'study the next roadmap item'}**."
     }
