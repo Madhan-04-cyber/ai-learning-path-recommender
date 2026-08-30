@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  BookOpen,
   Bot,
   Home,
   Map,
@@ -18,7 +17,6 @@ export type AppRoute =
   | "/skills"
   | "/coach"
   | "/progress"
-  | "/resources"
   | "/profile"
   | "/settings";
 
@@ -38,7 +36,6 @@ export const primaryNavigation: NavigationItem[] = [
 ];
 
 export const secondaryNavigation: NavigationItem[] = [
-  { href: "/resources", label: "Resources", icon: BookOpen },
   { href: "/profile", label: "Profile", icon: UserRound },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
